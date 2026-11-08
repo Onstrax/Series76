@@ -1,0 +1,99 @@
+{
+  "package": "Series76_Kiro_Handoff_v1.0",
+  "date": "2026-11-07",
+  "mode": "architecture_alignment_no_specs_no_implementation",
+  "canonical_count": 7,
+  "original_source_count": 4,
+  "files": [
+    {
+      "path": "00_START_HERE/AUDIT_REPORT.md",
+      "size_bytes": 3803,
+      "sha256": "d512762a261fc42ebe0a84e91e13ee490a6d6cd9edc51deb60ce42abaa2f40b6"
+    },
+    {
+      "path": "00_START_HERE/KIRO_START_PROMPT.md",
+      "size_bytes": 3157,
+      "sha256": "952bf836d08de0a41f5cdc7f73ad6c285ed4bf51659d44714b08445fad8dbacc"
+    },
+    {
+      "path": "00_START_HERE/README_HANDOFF.md",
+      "size_bytes": 2443,
+      "sha256": "3a5d9a4aacc81ddbcfe4ca9673a96d822ba6ab36fde16030091212bb79b2154a"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F0_requirements_and_quality_catalog_v1.0.md",
+      "size_bytes": 45840,
+      "sha256": "be123da21b7d29b236e28e039528f4a5278ecb75f67cd22c5997c0c60d4956e6"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F1_data_architecture_handoff_v1.1.md",
+      "size_bytes": 25422,
+      "sha256": "039655cdf6e226c4d1f0a1cee65258cd309fae65f12313736d8fab16f7266ad9"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F2_agent_architecture_handoff_v1.1.md",
+      "size_bytes": 26165,
+      "sha256": "49205a025d528ad2643818033ed6fe00c6635f53c0b936a385219603fc6902a5"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F3_architecture_handoff_v1.0.md",
+      "size_bytes": 56065,
+      "sha256": "94dfab7f432303174e2026bcb7b20a6350feca0df89b99a994081ccdffe1ce24"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F4_android_ux_handoff_v1.1.md",
+      "size_bytes": 24911,
+      "sha256": "84f18b0dddc5dc2c55857f3dd49dd8760707596121814fb7049abc65c7193945"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F5_quality_testing_delivery_handoff_v1.1.md",
+      "size_bytes": 15100,
+      "sha256": "2baf3560215a639cd716ed111d75cd5c0600183d28adfc457b79fedddece7380"
+    },
+    {
+      "path": "01_CANONICAL_F0_F6/F6_kiro_master_alignment_v1.0.md",
+      "size_bytes": 16340,
+      "sha256": "caaa1c138f496b280566290d7f9e698fb92afa4ef60cea2917eee3c7b54d6dfa"
+    },
+    {
+      "path": "02_ORIGINAL_SOURCES/Series 76 First Toughts.md",
+      "size_bytes": 3062,
+      "sha256": "c886acc2dd2576fc1bd8c5c17b9067d4dd328fe13a063c3b164d91a728753054"
+    },
+    {
+      "path": "02_ORIGINAL_SOURCES/assessment-en.pdf",
+      "size_bytes": 225353,
+      "sha256": "95c1c2c8abcd860fbbf8f6a5a37e9f9e16c25b966c4eca32fc4c0a90138f2f21"
+    },
+    {
+      "path": "02_ORIGINAL_SOURCES/series_76_electric_data.pdf",
+      "size_bytes": 518460,
+      "sha256": "4c28023929183df8e2a763e759cc84572b44604b30837a21e22c1166f88267e0"
+    },
+    {
+      "path": "02_ORIGINAL_SOURCES/series_76_summary.pdf",
+      "size_bytes": 97850,
+      "sha256": "e4b7cd97f4a6e8dded24fa94ab6c5b01a4a5752700d5f117b1a05f43e0adaf0f"
+    },
+    {
+      "path": "03_SUPPORTING_REFERENCES/F0_discovery_alignment_v0.23.md",
+      "size_bytes": 108503,
+      "sha256": "f0ba973edac71e07fd450fe8132c6e20e2026ca68b814b4bfdc0bdc61a6882d1"
+    },
+    {
+      "path": "03_SUPPORTING_REFERENCES/F1_physical_schema_candidate_v0.1.md",
+      "size_bytes": 18562,
+      "sha256": "5c404808a07bb3ad9ddfe0894b7379297590dd10483df7a12d7eb599738e2ffc"
+    },
+    {
+      "path": "03_SUPPORTING_REFERENCES/F2_agent_design_decision_pack_v0.2.md",
+      "size_bytes": 14169,
+      "sha256": "2bf3c270ed29f22043540c44d4adc9ff454507d172a89d8f551a465721b32b47"
+    },
+    {
+      "path": "03_SUPPORTING_REFERENCES/F3_architectural_styles_patterns_tactics_v0.1.md",
+      "size_bytes": 20287,
+      "sha256": "b34f05cb0a07b5ab452de4dd84f7b97a767367a65d06e2906cfdffb282223d02"
+    }
+  ]
+}
