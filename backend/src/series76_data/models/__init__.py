@@ -14,6 +14,7 @@ from series76_data.models.enums import (
     RunStatus,
     SupplyMode,
 )
+from series76_data.models.orm import Base
 from series76_data.models.value_status import Measured, MetricValue
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "RunStatus",
     "MetricValue",
     "Measured",
+    "Base",
 ]
