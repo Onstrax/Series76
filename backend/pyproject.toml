@@ -1,0 +1,83 @@
+[project]
+name = "series76"
+version = "0.1.0"
+description = "Series 76 Technical Assistant — data, domain, backend API, agent, and evaluation (Specs 1–4, 6)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+
+# Core dependencies shared across the Python slices (Specs 1–4, 6).
+# Versions are pinned for reproducibility; see F5 reproducibility requirements.
+dependencies = [
+    # --- Spec 1: data-and-ingestion ---
+    "sqlalchemy==2.0.36",
+    "alembic==1.14.0",
+    "psycopg[binary]==3.2.3",
+    # --- Spec 3: backend-api-auth-jobs-crypto ---
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.6.1",
+    "argon2-cffi==23.1.0",
+    "cryptography==44.0.0",
+    "python-multipart==0.0.19",
+    "httpx==0.28.1",
+    # --- Spec 4: agent-orchestration-response ---
+    # LangChain/LangGraph pinned; the agent path is provider-agnostic (OpenRouter via env).
+    "langchain==0.3.13",
+    "langchain-core==0.3.28",
+    "langgraph==0.2.60",
+    "openai==1.58.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "hypothesis==6.122.3",
+    "testcontainers[postgres]==4.9.0",
+    "ruff==0.8.4",
+    "mypy==1.13.0",
+]
+# Fresh-extraction OCR stack is optional and only needed for Spec 1 fresh_extraction mode.
+# Kept out of the default install so the reproducible verified_replay path needs no heavy deps.
+ocr = [
+    "google-generativeai==0.8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/series76_data",
+    "src/series76_domain",
+    "src/series76_api",
+    "src/series76_agent",
+    "src/series76_eval",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra -q"
+markers = [
+    "integration: tests requiring a real PostgreSQL container",
+    "experiment: tasks requiring the real PDF audit or live API; not asserted executed",
+    "property: Hypothesis property-based tests (min 100 iterations)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["series76_data", "series76_domain", "series76_api", "series76_agent", "series76_eval"]
