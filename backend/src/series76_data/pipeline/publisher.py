@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -71,6 +72,7 @@ class Publisher:
         audited: AuditedEdition,
         actor: str,
         oracle: OracleCounts | None = None,
+        load_facts: Callable[[uuid.UUID], None] | None = None,
     ) -> CatalogEdition:
         """Verify and atomically activate an edition.
 
@@ -79,10 +81,12 @@ class Publisher:
         without creating a duplicate or moving the pointer (Property 2).
 
         Otherwise the gate runs inside the transaction; on PASS the edition is
-        inserted, the pointer flips atomically, and a publication event is
-        logged. On gate failure the transaction rolls back and
-        ``PUBLICATION_FAILED`` is raised with the prior edition intact
-        (Property 19, 21).
+        inserted, ``load_facts`` (if given) writes the edition's facts and
+        provenance in the SAME transaction, then the pointer flips atomically
+        and a publication event is logged. A failure while loading facts rolls
+        everything back, so readers never see a partially loaded edition. On
+        gate failure the transaction rolls back and ``PUBLICATION_FAILED`` is
+        raised with the prior edition intact (Property 19, 21).
 
         Raises:
             IngestionError: ``PUBLICATION_FAILED`` on gate failure or any error
@@ -116,6 +120,9 @@ class Publisher:
             )
             self._session.add(edition)
             self._session.flush()
+            if load_facts is not None:
+                load_facts(edition_id)
+                self._session.flush()
 
             self._flip_pointer(edition_id)
             self._log_event(

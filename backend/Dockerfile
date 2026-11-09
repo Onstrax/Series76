@@ -21,6 +21,8 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
+# Approved verified_replay artifacts: audit sheets, manifest, golden dataset.
+COPY data ./data
 
 RUN pip install --upgrade pip \
     && pip install .

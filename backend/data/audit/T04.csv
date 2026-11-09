@@ -1,0 +1,6 @@
+Row,Base Part Number,On/Off Output Torque / In-Lbs.,On/Off Output Torque / Nm,On/Off Duty Cycle / S4%,Cycles per Hour / Cycles,Operating Speed / Sec,Full Load Current (FLA) / Amps,Locked Rotor Current (LRA) / Amps,Motor Power / Watts,Audit,Justification
+1,761X30-11380000/A,620,70,30,350,17,5.0,12.8,40,,
+2,761Y30-11380000/A,700,80,30,300,20,6.3,12.8,^,,
+3,762X30-11380000/A,"1,350",150,40,200,22,6.0,16.9,^,,
+4,762Y30-11380000/A,"1,410",160,40,200,22,7.4,16.9,^,,
+5,763X30-11380000/A,"2,120",240,35,160,32,8.9,30.8,^,,

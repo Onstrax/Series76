@@ -28,11 +28,11 @@ This section lists only what has been executed. Everything else is marked
   property), the integration suites against a real PostgreSQL 15 container (Testcontainers),
   `ruff` and `mypy --strict`. Each executed level has an `Evidence_Record` in
   `docs/evidence/evidence.jsonl`. Run `python -m series76_eval status` in `backend/` to see them.
-- **[EXPERIMENT] — catalog data.** The audited golden dataset and the `verified_replay`
-  manifests do not exist yet. They come from a **manual audit** of
-  `series_76_electric_data.pdf`, and no language model may transcribe it. Until that audit
-  exists, the published catalog is empty, so the assistant finds no part numbers. It never
-  makes any up.
+- **[EXPERIMENT] — catalog data.** The ETL commands and a local-OCR **draft** of the audit
+  sheets (`backend/data/audit/`) exist. The human audit of `series_76_electric_data.pdf` is
+  not done yet, so the audited golden dataset and the `verified_replay` manifest do not
+  exist either. No language model transcribes the PDF. Until the audit is done, the
+  published catalog is empty, so the assistant finds no part numbers. It never makes any up.
 - **[EXPERIMENT] — Android.** No Gradle build, JVM test run or emulator run has been
   executed (no Android SDK in the authoring environment). See `android/README.md`.
 - **[EXPERIMENT] — live model evaluation.** It needs an `OPENROUTER_API_KEY`. No model or
@@ -245,13 +245,21 @@ No model or tool set is declared the winner without a persisted `Evidence_Record
   the evaluator's own `GEMINI_API_KEY`, and its output must pass the same manual audit
   before it is published.
 
-Current state, honestly:
+The PDF tables are **images** (there is no text layer), so the initial edition comes from
+a manual audit. The ETL is `python -m series76_data`, run in `backend/`:
 
-- The pipeline is implemented as a library: replay extractor, normalizer, reconciler,
-  verifier, manifest builder and publisher. It is tested against a real PostgreSQL database.
-- The `fresh_extraction` extractor is a stub.
-- **There is no command-line ETL runner**, and **no audited manifests are committed**,
-  because they depend on the manual PDF audit [EXPERIMENT].
+| Command | What it does |
+|---|---|
+| `draft` | Local OCR (RapidOCR, no language model) reads each page twice, at 1x and 2x. It writes one audit sheet per table to `data/audit/`. Where the two reads disagree, or a value looks like a classic OCR confusion, the cell is marked `?`. It refuses to overwrite sheets that are being audited. Needs the `etl-draft` extra and poppler's `pdfimages`. |
+| `check` | Audit progress: rows marked `OK`, unresolved `?` cells, malformed values. |
+| `build --reviewer NAME` | Turns the audited sheets into `data/verified_replay/manifest.json` (SHA-256 of the PDF and of every artifact, versions, reviewer, counts, corrections, `manifest_digest`) and `data/golden/golden_dataset.json`. It refuses an incomplete audit, a changed row without a justification, and counts that differ from the 7/68/4 oracle. |
+| `publish` | `verified_replay`: verifies every artifact hash, re-derives the edition from the verified bytes, checks the manifest digest and the golden round trip, then publishes atomically through the Spec 1 gate. It is idempotent. Compose runs it in the one-shot `migrate` job. Until a manifest exists it is a no-op. |
+
+`python -m series76_eval documental-verify` then compares the published edition with the
+golden dataset, cell by cell, at the exact printed string. See
+`backend/data/audit/AUDIT_GUIDE.md` for what the reviewer checks.
+
+The `fresh_extraction` extractor is a stub and is not delivered (owner decision, time).
 
 `python -m series76_eval integrity` checks the source PDF against the trusted digest in
 `Series76_Kiro_Handoff_v1.0/SHA256SUMS.txt`. A mismatch rejects the PDF before ingestion.
@@ -298,7 +306,8 @@ Current state, honestly:
 ## Known failures and gaps
 
 - **The catalog is empty until the manual audit is done**, so lookups return
-  "no matching part numbers" ([EXPERIMENT], above).
+  "no matching part numbers" ([EXPERIMENT], above). The OCR draft is a candidate only;
+  nothing reaches the catalog without the reviewer's `OK` on every row.
 - **Traceability:** `F3-AT10` (Android cross-token) and `F3-AT11` (catalog failure) were
   listed only in the Spec 3 summary table. By owner decision they are now traced by Spec 5
   Requirement 9 and Spec 4 Requirement 10, whose behaviour already covered them; the matrix

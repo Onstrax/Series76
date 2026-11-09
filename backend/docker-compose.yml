@@ -2,9 +2,11 @@
 # image (Req 1.4, 12.1). No secret is baked into the image; all config is injected
 # from the environment (env_file: .env).
 #
-# `migrate` is a one-shot job, not a runtime service: it runs Alembic to head and then
+# `migrate` is a one-shot job, not a runtime service: it runs Alembic to head,
 # provisions the least-privilege application login named in DATABASE_URL (granted
-# app_writer + runtime_reader_role), then exits. api/worker start only after it
+# app_writer + runtime_reader_role), publishes the audited catalog edition through
+# verified_replay (hash-checked, no model call, idempotent; a no-op until the audit
+# manifest exists), then exits. api/worker start only after it
 # completed successfully (Req 12.2), so a failed migration never serves. Only this job
 # holds the privileged migration URL; the serving processes never see it.
 
@@ -33,7 +35,10 @@ services:
     environment:
       # Migrations + provisioning run with the privileged owner; the app never does.
       SERIES76_MIGRATE_URL: postgresql+psycopg://series76:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/series76
-    command: ["sh", "-c", "alembic upgrade head && python -m series76_api.provision"]
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && python -m series76_api.provision && python -m series76_data publish
     depends_on:
       db:
         condition: service_healthy

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from series76_eval.evidence import EvidenceStore, Result
@@ -34,6 +35,50 @@ GOLDEN = BACKEND / "data" / "golden" / "golden_dataset.json"
 
 def _store() -> EvidenceStore:
     return EvidenceStore(STORE)
+
+
+def _documental_verify(out: Callable[[str], object]) -> int:
+    """Published edition vs golden dataset, cell by cell (Spec 6 Req 2.2, 2.3).
+
+    Reads the active edition with ``SERIES76_MIGRATE_URL`` (or ``DATABASE_URL``),
+    converts both sides to :class:`GoldenCell` and runs :class:`GoldenOracle`,
+    whose integrity check binds the golden cells to their recorded SHA-256.
+    The golden dataset is only read, never modified.
+    """
+
+    import json
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from series76_data.etl.load import published_cells
+    from series76_eval.oracle import GoldenCell, GoldenOracle
+
+    url = os.environ.get("SERIES76_MIGRATE_URL") or os.environ.get("DATABASE_URL")
+    if not url:
+        out("documental-verify needs SERIES76_MIGRATE_URL or DATABASE_URL\n")
+        return 2
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+
+    def cell(d: dict[str, object]) -> GoldenCell:
+        return GoldenCell(str(d["table"]), int(str(d["row"])), str(d["column"]),
+                          str(d["printed_value"]), str(d["unit"]), bool(d["not_applicable"]),
+                          str(d["note"]))
+
+    golden = tuple(cell(v) for v in doc["values"])
+    with Session(create_engine(url)) as session:
+        edition_id, published = published_cells(session)
+    if str(edition_id) != doc["edition_id"]:
+        out(f"FAIL: active edition {edition_id} is not the golden edition {doc['edition_id']}\n")
+        return 1
+    report = GoldenOracle().verify(tuple(cell(p.as_dict()) for p in published), golden,
+                                   doc["cells_sha256"])
+    out(f"documental verification: {'PASSED' if report.passed else 'FAILED'}; "
+        f"field coverage {report.field_coverage}; mismatches {len(report.mismatches)}; "
+        f"golden integrity {'ok' if report.manifest_ok else 'BROKEN'}\n")
+    for m in report.mismatches[:50]:
+        out(f"  - {m.cell}: expected {m.expected!r}, observed {m.observed!r}\n")
+    return 0 if report.passed else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -105,8 +150,7 @@ def main(argv: list[str] | None = None) -> int:
                 "(Spec 1 manual audit of series_76_electric_data.pdf is an [EXPERIMENT]).\n"
             )
             return 0
-        out("golden dataset present: run the GoldenOracle against the published edition.\n")
-        return 0
+        return _documental_verify(out)
 
     if cmd == "traceability":
         store = _store()
