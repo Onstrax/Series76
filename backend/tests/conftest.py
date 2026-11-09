@@ -48,3 +48,15 @@ def postgres_url() -> Iterator[str]:
 
     with PostgresContainer("postgres:15-alpine", driver="psycopg") as pg:
         yield pg.get_connection_url()
+
+
+# --- Hypothesis profile: enforce >= 100 examples per property (Spec 2 Task 1.1) ---
+from hypothesis import HealthCheck, settings  # noqa: E402
+
+settings.register_profile(
+    "series76",
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.load_profile("series76")

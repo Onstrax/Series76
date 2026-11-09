@@ -52,3 +52,41 @@ def migrated_db(alembic_config: Config) -> Iterator[Config]:
         yield alembic_config
     finally:
         command.downgrade(alembic_config, "base")
+
+
+# --- Spec 2: seeded fixture catalog for the domain-and-tools integration tests ---
+from collections.abc import Callable  # noqa: E402
+
+from sqlalchemy import Engine, create_engine  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+
+from .seed import SeededCatalog, seed_fixture_catalog  # noqa: E402
+
+
+@pytest.fixture
+def seeded_catalog(
+    migrated_db: Config, postgres_url: str
+) -> Iterator[tuple[SeededCatalog, Callable[[], Session], Engine]]:
+    """Seed the fixture catalog into a migrated schema and yield read helpers.
+
+    Yields a triple ``(seeded, session_factory, engine)``:
+
+    * ``seeded`` — the :class:`SeededCatalog` identifiers;
+    * ``session_factory`` — makes a fresh reader :class:`Session` (the domain
+      adapter switches it to ``runtime_reader_role``);
+    * ``engine`` — the underlying engine (for role-grant smoke checks).
+
+    The seed is inserted as the container superuser, then committed so reader
+    sessions observe it. ``migrated_db`` tears the schema back down to base.
+    """
+
+    engine = create_engine(postgres_url, future=True)
+    factory = sessionmaker(
+        bind=engine, class_=Session, expire_on_commit=False, future=True
+    )
+    with factory() as seed_session:
+        seeded = seed_fixture_catalog(seed_session)
+    try:
+        yield seeded, factory, engine
+    finally:
+        engine.dispose()
