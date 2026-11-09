@@ -323,3 +323,13 @@ def test_supply_modes_follow_what_the_user_wrote() -> None:
     assert settle_supply_modes(any_mode, "Parts on 24 V") == any_mode  # nothing explicit
     torque = {"type": "predicate", "field": "torque_inlbs", "operator": "GT", "value": "5"}
     assert settle_supply_modes(torque, "only AC/DC") == torque  # other fields untouched
+
+
+def test_not_equal_on_a_multi_valued_categorical_field_means_has_none() -> None:
+    from decimal import Decimal
+
+    from series76_agent.interpreter import _prune_filter
+
+    node = {"type": "predicate", "field": "service", "operator": "NE", "value": "modulante"}
+    assert _prune_filter(node, frozenset({Decimal(1)}), []) == {"type": "not", "child": {
+        "type": "predicate", "field": "service", "operator": "EQ", "value": "Modulating"}}

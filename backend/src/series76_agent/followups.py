@@ -7,6 +7,8 @@ never invent a part number, a value or a scope:
 
 * **Undocumented attribute** (price, manufacturer, warranty, ...): the turn is
   out of scope and abstains, whatever else was interpreted (Spec 4 fallback h).
+* **Named part judged out of scope**: a message naming a part number and asking
+  nothing undocumented is a lookup of that part.
 * **Resolved follow-up**: a ``FOLLOWUP`` whose references already resolved to
   part numbers ("show me the second one") is a lookup of exactly those parts.
 * **Refinement of the focus**: a ``FOLLOWUP`` naming only a documented
@@ -74,6 +76,13 @@ def settle_turn(draft: DraftPlan, message: str, focus: tuple[str, ...]) -> Draft
 
     if asks_undocumented_attribute(message):
         return replace(draft, intent=Intent.OUT_OF_SCOPE)
+    if draft.intent is Intent.OUT_OF_SCOPE and any(
+        r.provenance is Provenance.CURRENT_MESSAGE for r in draft.referents
+        if r.part_number is not None
+    ):
+        # The message names a part and asks nothing undocumented: showing its
+        # documented data is in scope (a lookup can only show printed facts).
+        return replace(draft, intent=Intent.EXACT_LOOKUP)
     single_focus = focus[0] if len(set(focus)) == 1 else None
     if _ONLY_LANGUAGE.match(message) and explicit_switch(message) is not None:
         if single_focus is not None:

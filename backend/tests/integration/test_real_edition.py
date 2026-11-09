@@ -122,3 +122,23 @@ def test_supply_mode_filters_select_the_printed_tables(real: Engine) -> None:
         result = search.invoke({"filter_ast": ast})
         assert result.failure is None
         assert set(result.verified_pns) == tables[table], (message, result.verified_pns)
+
+
+def test_parts_without_a_service_exclude_every_dual_service_row(real: Engine) -> None:
+    from series76_agent.integration.spec3 import PgCatalogToolProvider
+    from series76_agent.interpreter import _prune_filter
+    from series76_domain.tools.context import ToolContext
+    from series76_eval.ab_live import golden_rows
+
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    rows = golden_rows(doc)
+    no_mod = {pn for pn, r in rows.items() if r.value("mod.torque_inlbs") is None}
+    t04 = {pn for pn, r in rows.items() if r.table == "T04"}
+    ast = _prune_filter({"type": "predicate", "field": "service", "operator": "NE",
+                         "value": "modulante"}, frozenset(), [])
+    search = PgCatalogToolProvider(real, "B").tools(
+        ToolContext(edition_id=uuid.UUID(doc["edition_id"]), max_results=50))["search_parts"]
+    result = search.invoke({"filter_ast": ast})
+    assert result.failure is None
+    listed = set(result.verified_pns) | set(result.preliminary_pns)
+    assert t04 <= listed <= no_mod, sorted(listed - no_mod)

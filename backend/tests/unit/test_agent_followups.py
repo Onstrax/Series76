@@ -47,3 +47,11 @@ def test_a_pure_language_switch_repeats_the_focus_lookup() -> None:
         is Intent.OUT_OF_SCOPE  # nothing in focus: nothing to repeat
     mixed = settle_turn(_draft(Intent.FILTER_SEARCH), "en español, partes On/Off", (PN,))
     assert mixed.intent is Intent.FILTER_SEARCH  # not only a language request
+
+
+def test_a_named_part_judged_out_of_scope_is_looked_up() -> None:
+    settled = settle_turn(_draft(Intent.OUT_OF_SCOPE, PN),
+                          f"Torque of {PN} for On/Off and Modulating", ())
+    assert settled.intent is Intent.EXACT_LOOKUP
+    assert settle_turn(_draft(Intent.OUT_OF_SCOPE, PN), f"Price of {PN}", ()).intent \
+        is Intent.OUT_OF_SCOPE

@@ -488,6 +488,11 @@ def _prune_filter(
     }
     if unit is not None:
         out["unit"] = unit
+    if field in CATEGORICAL_SYNONYMS and out["operator"] == "NE":
+        # A part can document several services / current modes. "Not X" means
+        # the part has no X, i.e. NOT(EQ X); NE would keep any part that has
+        # some other value too (a dual-service part is "not Modulating" by NE).
+        return {"type": "not", "child": {**out, "operator": "EQ"}}
     return out
 
 
