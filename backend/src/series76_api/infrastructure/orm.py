@@ -20,6 +20,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     ForeignKey,
+    Identity,
     Integer,
     LargeBinary,
     Text,
@@ -221,6 +222,8 @@ class MessageORM(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )
+    #: Insertion order (identity); breaks same-transaction ``created_at`` ties.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False)
 
 
 class DomainStateORM(Base):

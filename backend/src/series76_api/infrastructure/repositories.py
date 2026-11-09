@@ -404,15 +404,16 @@ class MessageRepository:
     async def list_for_session(self, session_id: uuid.UUID) -> list[MessageORM]:
         """Return a conversation's messages in deterministic total order.
 
-        Ordered by ``(created_at asc, message_id asc)`` so ties are broken
-        deterministically (Property 36). Debug traces live in a separate table
+        Ordered by ``(created_at asc, seq asc)``: messages written in one
+        transaction (a worker turn) keep their insertion order, and the order
+        is a deterministic total order (Property 36). Debug traces live in a separate table
         and are never included here.
         """
 
         stmt = (
             select(MessageORM)
             .where(MessageORM.session_id == session_id)
-            .order_by(MessageORM.created_at.asc(), MessageORM.message_id.asc())
+            .order_by(MessageORM.created_at.asc(), MessageORM.seq.asc())
         )
         return list((await self._session.execute(stmt)).scalars().all())
 

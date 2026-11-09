@@ -27,19 +27,23 @@ import org.junit.Test
 class DebugPropertiesTest {
 
     private fun trace(calls: List<String>, duration: Long, secret: String) = buildJsonObject {
-        put("turn_id", "turn-1")
-        put("outcome", "OK")
-        put("model_calls", 2)
         put("duration_ms", duration)
-        put("turn_states", JsonArray(listOf("ACCEPTED", "COMPLETED").map { JsonPrimitive(it) }))
         put("authorization", "Bearer $secret")
         put("system_prompt", "You interpret $secret")
-        put("tool_calls", buildJsonArray {
+        put("steps", buildJsonArray {
+            add(buildJsonObject {
+                put("turn_id", "turn-1")
+                put("outcome", "OK")
+                put("model_calls", 2)
+                put("turn_states", JsonArray(listOf("ACCEPTED", "COMPLETED").map { JsonPrimitive(it) }))
+                put("access_token", secret)
+            })
+        })
+        put("tool_args", buildJsonArray {
             calls.forEachIndexed { i, origin ->
                 add(buildJsonObject {
                     put("tool", "get_part_details")
                     put("origin", origin)
-                    put("status", "OK")
                     put("arguments", buildJsonObject {
                         put("part_number", "76-$i")
                         put("api_key", secret)
@@ -47,6 +51,9 @@ class DebugPropertiesTest {
                     })
                 })
             }
+        })
+        put("tool_results", buildJsonArray {
+            calls.forEach { _ -> add(buildJsonObject { put("tool", "get_part_details"); put("status", "OK") }) }
         })
     }
 

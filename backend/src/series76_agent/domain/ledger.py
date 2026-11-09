@@ -9,13 +9,19 @@ before it is issued; the observed cost is *recorded* truthfully afterwards
 further call in that category.
 
 Persistence is optional: with ``path`` set, entries are appended as JSON lines
-so spend accumulates across processes/runs (Spec 6 reuses this file).
+so spend accumulates across processes/runs (Spec 6 reuses this file). Several
+processes (api + worker) may share one file: every authorization re-reads it
+under an exclusive file lock, so each cap check sees the spend recorded by the
+others. Calls already in flight are bounded by their pre-call estimates; the
+provider-side key credit limit remains the final backstop.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -74,9 +80,34 @@ class CostLedger:
         if self.dev_eval_cap_usd + self.demo_reserve_usd > self.hard_cap_usd:
             raise ValueError("dev/eval cap plus demo reserve cannot exceed the hard cap")
         if self.path is not None and self.path.exists():
-            for line in self.path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    self.entries.append(_entry_from_json(json.loads(line)))
+            self.entries[:] = self._read_file()
+
+    def _read_file(self) -> list[LedgerEntry]:
+        assert self.path is not None
+        if not self.path.exists():
+            return []
+        return [
+            _entry_from_json(json.loads(line))
+            for line in self.path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    @contextlib.contextmanager
+    def _file_lock(self) -> Iterator[None]:
+        """Exclusive cross-process lock on ``<path>.lock`` (no-op without a path)."""
+
+        if self.path is None:
+            yield
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.with_suffix(self.path.suffix + ".lock").open("a") as fh:
+            try:
+                import fcntl
+
+                fcntl.flock(fh, fcntl.LOCK_EX)
+            except ImportError:  # pragma: no cover - non-POSIX: thread lock only
+                pass
+            yield
 
     # --- totals ------------------------------------------------------------
 
@@ -113,7 +144,9 @@ class CostLedger:
 
         if isinstance(estimated_cost_usd, float):
             raise ValueError("estimate must be a Decimal")
-        with self._lock:
+        with self._lock, self._file_lock():
+            if self.path is not None:
+                self.entries[:] = self._read_file()  # spend recorded by other processes
             if self.remaining(category) <= 0:
                 raise CostCapReached(f"{category.value} budget exhausted")
             if estimated_cost_usd > self.remaining(category):
@@ -122,10 +155,9 @@ class CostLedger:
     def record(self, entry: LedgerEntry) -> None:
         """Record an observed charge truthfully (never dropped)."""
 
-        with self._lock:
+        with self._lock, self._file_lock():
             self.entries.append(entry)
             if self.path is not None:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(_entry_to_json(entry)) + "\n")
 

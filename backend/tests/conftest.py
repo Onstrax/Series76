@@ -59,4 +59,6 @@ settings.register_profile(
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-settings.load_profile("series76")
+# Debug-only quick profile; evidence runs always use the default "series76".
+settings.register_profile("smoke", parent=settings.get_profile("series76"), max_examples=3)
+settings.load_profile(__import__("os").environ.get("SERIES76_HYPOTHESIS_PROFILE", "series76"))

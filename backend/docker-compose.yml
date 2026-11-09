@@ -1,15 +1,19 @@
-# Series 76 backend — db / api / worker, api and worker from ONE image (Req 1.4, 12.1).
-# No secret is baked into the image; all config is injected from the environment
-# (env_file: .env). The `migrate` service runs Alembic to head and MUST complete
-# successfully before `api`/`worker` serve (Req 12.2): a failed migration stops
-# serving because api/worker depend on it with condition: service_completed_successfully.
+# Series 76 backend — runtime services db / api / worker; api and worker run from ONE
+# image (Req 1.4, 12.1). No secret is baked into the image; all config is injected
+# from the environment (env_file: .env).
+#
+# `migrate` is a one-shot job, not a runtime service: it runs Alembic to head and then
+# provisions the least-privilege application login named in DATABASE_URL (granted
+# app_writer + runtime_reader_role), then exits. api/worker start only after it
+# completed successfully (Req 12.2), so a failed migration never serves. Only this job
+# holds the privileged migration URL; the serving processes never see it.
 
 services:
   db:
     image: postgres:15
     environment:
       POSTGRES_USER: series76
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-series76}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: series76
     volumes:
       - series76_pgdata:/var/lib/postgresql/data
@@ -27,9 +31,9 @@ services:
     env_file:
       - .env
     environment:
-      # Migrations run with a privileged URL; the app connects as app_writer.
-      SERIES76_MIGRATE_URL: ${SERIES76_MIGRATE_URL:-postgresql+psycopg://series76:series76@db:5432/series76}
-    command: ["alembic", "upgrade", "head"]
+      # Migrations + provisioning run with the privileged owner; the app never does.
+      SERIES76_MIGRATE_URL: postgresql+psycopg://series76:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/series76
+    command: ["sh", "-c", "alembic upgrade head && python -m series76_api.provision"]
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +42,11 @@ services:
     image: series76-backend:latest
     env_file:
       - .env
+    environment:
+      SERIES76_MIGRATE_URL: ""
+      COST_LEDGER_PATH: /var/lib/series76/cost_ledger.jsonl
+    volumes:
+      - series76_ledger:/var/lib/series76
     command:
       - uvicorn
       - series76_api.app:create_app
@@ -56,6 +65,11 @@ services:
     image: series76-backend:latest
     env_file:
       - .env
+    environment:
+      SERIES76_MIGRATE_URL: ""
+      COST_LEDGER_PATH: /var/lib/series76/cost_ledger.jsonl
+    volumes:
+      - series76_ledger:/var/lib/series76
     command: ["python", "-m", "series76_api.worker"]
     depends_on:
       migrate:
@@ -63,3 +77,5 @@ services:
 
 volumes:
   series76_pgdata:
+  # One cumulative cost ledger shared by api + worker (USD 10 / 6 / 4 policy).
+  series76_ledger:

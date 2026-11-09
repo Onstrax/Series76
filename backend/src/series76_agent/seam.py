@@ -95,8 +95,13 @@ def to_outcome(result: TurnResult) -> TurnOutcome:
         interpretation_summary=(
             summary_dto(result.response.summary) if result.response.summary else None
         ),
-        plan=PlanRef(plan_id=plan.plan_id, revision=plan.revision,
-                     confirmation_needed=plan.confirmation_needed) if plan else None,
+        plan=PlanRef(
+            plan_id=plan.plan_id,
+            revision=plan.revision,
+            confirmation_needed=plan.confirmation_needed,
+        )
+        if plan
+        else None,
         warnings=tuple(warnings),
         catalog_edition_id=str(result.edition_id) if result.edition_id else None,
         trace=debug_trace(result),
@@ -104,28 +109,40 @@ def to_outcome(result: TurnResult) -> TurnOutcome:
 
 
 def debug_trace(result: TurnResult) -> dict[str, Any]:
-    """A sanitized, developer-only trace of the turn (encrypted by Spec 3)."""
+    """A developer-only trace of the turn in the Spec 3 trace shape.
+
+    Spec 3 keeps only ``steps`` / ``tool_args`` / ``tool_results`` /
+    ``duration_ms`` (and strips secret-named keys), so the turn-level execution
+    goes in ``steps`` and each tool attempt in the index-aligned
+    ``tool_args`` / ``tool_results`` lists.
+    """
 
     return {
-        "turn_id": result.turn_id,
-        "turn_states": [s.value for s in result.history],
-        "outcome": result.outcome.value,
-        "model_calls": result.model_calls,
-        "tool_calls": [
+        "steps": [
+            {
+                "turn_id": result.turn_id,
+                "turn_states": [s.value for s in result.history],
+                "outcome": result.outcome.value,
+                "model_calls": result.model_calls,
+                "figures_presented": len(result.response.presented),
+                "figures_withheld": len(result.response.withheld),
+                "claims": [
+                    {"kind": c.claim.kind.value, "verdict": c.verdict.value}
+                    for c in result.response.claims
+                ],
+            }
+        ],
+        "tool_args": [
             {
                 "tool": inv.name,
                 "origin": inv.origin,
-                "status": inv.status.value,
                 "arguments": inv.args,
                 "ignored_server_arguments": list(inv.ignored_server_keys),
             }
             for inv in result.invocations
         ],
-        "figures_presented": len(result.response.presented),
-        "figures_withheld": len(result.response.withheld),
-        "claims": [
-            {"kind": c.claim.kind.value, "verdict": c.verdict.value}
-            for c in result.response.claims
+        "tool_results": [
+            {"tool": inv.name, "status": inv.status.value} for inv in result.invocations
         ],
     }
 

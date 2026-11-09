@@ -25,7 +25,14 @@ COPY alembic.ini ./alembic.ini
 RUN pip install --upgrade pip \
     && pip install .
 
+# Run as an unprivileged user; the cost-ledger directory is owned by it so the
+# named volume mounted there inherits that ownership.
+RUN useradd --system --uid 10001 --home-dir /app series76 \
+    && mkdir -p /var/lib/series76 \
+    && chown series76 /var/lib/series76
+USER series76
+
 # Default command is overridden per-service in docker-compose.
 # api:    uvicorn series76_api.app:create_app --factory --host 0.0.0.0 --port 8000
-# worker: python -m series76_api.worker   (worker entrypoint arrives in Half B)
+# worker: python -m series76_api.worker
 CMD ["python", "-c", "import series76_api; print(series76_api.__version__)"]

@@ -39,3 +39,21 @@ async def test_pending_jobs_and_async_history(postgres_url: str, migrated_db: Co
         assert messages[0]["content"] == "first question"
         job = (await client.get(f"/api/jobs/{accepted.json()['job_id']}", headers=headers)).json()
         assert job["response"]["message_id"] == messages[1]["message_id"]
+
+
+async def test_async_turns_keep_question_before_answer(
+    postgres_url: str, migrated_db: Config
+) -> None:
+    """Same-transaction user/assistant rows keep insertion order (regression)."""
+
+    settings = build_settings(postgres_url)
+    async with spec3_client(postgres_url) as (client, _app, _clock):
+        _email, headers = await register_and_login(client)
+        sid = None
+        for i in range(5):
+            accepted = await _enqueue(client, headers, f"question {i}", session_id=sid)
+            sid = accepted.json()["session_id"]
+            await _drain(settings)
+        messages = (await client.get(f"/api/sessions/{sid}/messages", headers=headers)).json()
+        assert [m["role"] for m in messages] == ["user", "assistant"] * 5
+        assert [m["content"] for m in messages[::2]] == [f"question {i}" for i in range(5)]

@@ -65,15 +65,18 @@ object TraceParser {
         else -> element
     }
 
+    /** Parses the Spec 3 trace shape: `steps`, `tool_args`, `tool_results`, `duration_ms`. */
     fun parse(raw: JsonObject): TraceView {
         val obj = scrub(raw) as JsonObject
-        val calls = (obj["tool_calls"] as? JsonArray).orEmpty().mapNotNull { e ->
-            val c = e as? JsonObject ?: return@mapNotNull null
+        val step = (obj["steps"] as? JsonArray)?.firstOrNull() as? JsonObject ?: JsonObject(emptyMap())
+        val results = (obj["tool_results"] as? JsonArray).orEmpty()
+        val calls = (obj["tool_args"] as? JsonArray).orEmpty().mapIndexedNotNull { i, e ->
+            val c = e as? JsonObject ?: return@mapIndexedNotNull null
             val origin = c.s("origin") ?: "unknown"
             ToolCallView(
                 tool = c.s("tool") ?: "unknown",
                 origin = origin,
-                status = c.s("status") ?: "",
+                status = (results.getOrNull(i) as? JsonObject)?.s("status") ?: "",
                 arguments = (c["arguments"] ?: JsonObject(emptyMap())).toString(),
                 ignoredServerArguments = (c["ignored_server_arguments"] as? JsonArray).orEmpty()
                     .mapNotNull { (it as? JsonPrimitive)?.content },
@@ -82,14 +85,14 @@ object TraceParser {
         }
         val duration = (obj["duration_ms"] as? JsonPrimitive)?.longOrNull
         return TraceView(
-            traceId = obj.s("turn_id") ?: "",
-            outcome = obj.s("outcome") ?: "",
-            turnStates = (obj["turn_states"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.content },
-            modelCalls = (obj["model_calls"] as? JsonPrimitive)?.intOrNull,
+            traceId = step.s("turn_id") ?: "",
+            outcome = step.s("outcome") ?: "",
+            turnStates = (step["turn_states"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.content },
+            modelCalls = (step["model_calls"] as? JsonPrimitive)?.intOrNull,
             durationMs = duration?.coerceAtLeast(0), // durations are never negative
             toolCalls = calls,
-            figuresPresented = (obj["figures_presented"] as? JsonPrimitive)?.intOrNull,
-            figuresWithheld = (obj["figures_withheld"] as? JsonPrimitive)?.intOrNull,
+            figuresPresented = (step["figures_presented"] as? JsonPrimitive)?.intOrNull,
+            figuresWithheld = (step["figures_withheld"] as? JsonPrimitive)?.intOrNull,
         )
     }
 

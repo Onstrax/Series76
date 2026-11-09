@@ -78,6 +78,11 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# Spec 6 property tags must stay verbatim on one line.
+"tests/unit/test_eval_*.py" = ["E501"]
+"tests/integration/test_eval_*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

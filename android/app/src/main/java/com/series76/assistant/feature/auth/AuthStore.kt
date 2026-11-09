@@ -78,10 +78,14 @@ class AuthStore(
         }
     }
 
-    /** Logout always clears local tokens and hides the cache, even if the backend fails. */
+    /**
+     * Logout always clears local tokens and purges the account's cache from
+     * on-device storage, even if the backend fails (Spec 5 Req 3.7/9.2,
+     * Spec 6 Req 4.12).
+     */
     fun logout(): Job = scope.launch {
         withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { api.logout() }
-        session.closeLocally()
+        session.closeLocally(purgeCache = true)
         emit(AuthUiState.Idle)
     }
 

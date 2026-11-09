@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -80,6 +81,19 @@ class ChatStore(
 
     /** Client_Request_Id per turn intent, kept until the acceptance outcome is known. */
     private val intentOfTurn = LinkedHashMap<String, String>()
+
+    /** Lifecycle gate: no poll request is issued while the owning screen is stopped. */
+    private val screenStarted = MutableStateFlow(true)
+
+    /** The chat screen entered STOPPED: active polling issues no further requests. */
+    fun onScreenStopped() {
+        screenStarted.value = false
+    }
+
+    /** The chat screen is STARTED again: suspended polling resumes. */
+    fun onScreenStarted() {
+        screenStarted.value = true
+    }
 
     private fun draftKey(): String = _state.value.sessionId ?: ""
 
@@ -222,6 +236,7 @@ class ChatStore(
         var retryAfter: Long? = null
         while (true) {
             delay(PollingPolicy.nextDelaySeconds(attempt, retryAfter) * 1000)
+            screenStarted.first { it } // suspended (no request) while the screen is stopped
             val epoch = session.epoch.current()
             val result = api.pollJob(jobId)
             if (!session.epoch.isCurrent(epoch)) return

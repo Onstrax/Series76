@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.series76.assistant.AppContainer
@@ -77,6 +78,11 @@ fun ChatScreen(
     val summaryExpanded by viewModel.summaryExpanded.collectAsStateWithLifecycle(initialValue = false)
     // UI convenience only: the backend re-verifies role + ownership per trace call.
     val developer = session?.isDeveloper == true
+    // Polling stops issuing requests while this screen is stopped (Spec 6 Req 5.5).
+    LifecycleStartEffect(viewModel) {
+        viewModel.store.onScreenStarted()
+        onStopOrDispose { viewModel.store.onScreenStopped() }
+    }
 
     Scaffold(
         topBar = {

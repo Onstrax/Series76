@@ -1,0 +1,2056 @@
+{
+  "components": {
+    "schemas": {
+      "BarChartBlock": {
+        "description": "A bar chart of labeled numeric series (verified figures only).",
+        "properties": {
+          "comparable": {
+            "default": false,
+            "title": "Comparable",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "bar_chart",
+            "default": "bar_chart",
+            "title": "Kind",
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "metric_key": {
+            "default": "",
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/BarPointDTO"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "title": "BarChartBlock",
+        "type": "object"
+      },
+      "BarPointDTO": {
+        "description": "One bar of a comparable chart; an N/A/absent point carries no value.",
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/FigureDTO"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "figure"
+        ],
+        "title": "BarPointDTO",
+        "type": "object"
+      },
+      "ClarificationBlock": {
+        "description": "A clarification prompt (carries a question, no unverified numbers).",
+        "properties": {
+          "kind": {
+            "const": "clarification",
+            "default": "clarification",
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "question": {
+            "default": "",
+            "title": "Question",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "ClarificationBlock",
+        "type": "object"
+      },
+      "ComparisonRowDTO": {
+        "description": "One metric compared across parts, with comparability and context.",
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/FigureDTO"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "comparable": {
+            "default": false,
+            "title": "Comparable",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "supply_heterogeneous": {
+            "default": false,
+            "title": "Supply Heterogeneous",
+            "type": "boolean"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          },
+          "winner_part_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Part Number"
+          }
+        },
+        "required": [
+          "metric_key",
+          "label"
+        ],
+        "title": "ComparisonRowDTO",
+        "type": "object"
+      },
+      "ComparisonTableBlock": {
+        "description": "A comparison table across parts/attributes (verified figures only).",
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "kind": {
+            "const": "comparison_table",
+            "default": "comparison_table",
+            "title": "Kind",
+            "type": "string"
+          },
+          "metric_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonRowDTO"
+            },
+            "title": "Metric Rows",
+            "type": "array"
+          },
+          "part_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Part Numbers",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "ComparisonTableBlock",
+        "type": "object"
+      },
+      "ConversationTurnRequest": {
+        "description": "``POST /api/conversation`` body: optional session id + required query.\n\n``client_request_id`` is the idempotency key (Property 15). ``extra`` is\nignored so a client cannot smuggle an ``owner_id`` (Property 10).",
+        "properties": {
+          "client_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Request Id"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "ConversationTurnRequest",
+        "type": "object"
+      },
+      "CriterionDTO": {
+        "description": "One criterion of an interpretation summary with exactly one category.",
+        "properties": {
+          "category": {
+            "enum": [
+              "documented-fact",
+              "user-assumption",
+              "proposal",
+              "delegation"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "category"
+        ],
+        "title": "CriterionDTO",
+        "type": "object"
+      },
+      "EnvelopeStatus": {
+        "description": "Optional turn ``status`` for a ``Response_Envelope``.\n\nMirrors the design: completion plus clarification/confirmation states.",
+        "enum": [
+          "COMPLETED",
+          "NEEDS_CLARIFICATION",
+          "AWAITING_CONFIRMATION",
+          "clarification",
+          "confirmation"
+        ],
+        "title": "EnvelopeStatus",
+        "type": "string"
+      },
+      "EvidenceDTO": {
+        "description": "The published source cells/rows/notes a figure resolves to.",
+        "properties": {
+          "cell_refs": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Cell Refs",
+            "type": "array"
+          },
+          "note_refs": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Note Refs",
+            "type": "array"
+          },
+          "row_refs": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Row Refs",
+            "type": "array"
+          }
+        },
+        "title": "EvidenceDTO",
+        "type": "object"
+      },
+      "FigureDTO": {
+        "description": "One verified figure (or explicit absence) with its full context.",
+        "properties": {
+          "derived": {
+            "default": false,
+            "title": "Derived",
+            "type": "boolean"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceDTO"
+          },
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "formula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formula"
+          },
+          "frequency_hz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Hz"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "part_number": {
+            "title": "Part Number",
+            "type": "string"
+          },
+          "precision_decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Decimals"
+          },
+          "service": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "figure_id",
+          "metric_key",
+          "label",
+          "status",
+          "part_number"
+        ],
+        "title": "FigureDTO",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InterpretationSummaryDTO": {
+        "description": "The always-visible interpretation of a turn (no internals leaked).",
+        "properties": {
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDTO"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "delegated": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDTO"
+            },
+            "title": "Delegated",
+            "type": "array"
+          },
+          "expected_presentation_format": {
+            "title": "Expected Presentation Format",
+            "type": "string"
+          },
+          "ignored": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDTO"
+            },
+            "title": "Ignored",
+            "type": "array"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "proposed": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDTO"
+            },
+            "title": "Proposed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent",
+          "expected_presentation_format"
+        ],
+        "title": "InterpretationSummaryDTO",
+        "type": "object"
+      },
+      "JobAcceptedResponse": {
+        "description": "``POST /api/conversation/jobs`` 202 body: job id + session + QUEUED.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "session_id",
+          "status"
+        ],
+        "title": "JobAcceptedResponse",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "description": "Login payload: email + password.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MatchingPartNumbersBlock": {
+        "description": "Matching part numbers with a total and a (paginated) list.",
+        "properties": {
+          "is_complete": {
+            "default": true,
+            "title": "Is Complete",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "matching_part_numbers",
+            "default": "matching_part_numbers",
+            "title": "Kind",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 0,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "part_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Part Numbers",
+            "type": "array"
+          },
+          "preliminary": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Preliminary",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "top_one": {
+            "default": false,
+            "title": "Top One",
+            "type": "boolean"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "verified": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Verified",
+            "type": "array"
+          },
+          "winner_part_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Part Number"
+          }
+        },
+        "title": "MatchingPartNumbersBlock",
+        "type": "object"
+      },
+      "MeResponse": {
+        "description": "``GET /api/auth/me`` body \u2014 identity and role, never secret material.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "description": "A ``GET /api/sessions/{id}/messages`` entry (decrypted, trace-free).",
+        "properties": {
+          "blocks": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "role",
+          "content",
+          "blocks",
+          "created_at"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "PlanRef": {
+        "description": "A plan reference carried by the envelope when a plan is in play.",
+        "properties": {
+          "confirmation_needed": {
+            "title": "Confirmation Needed",
+            "type": "boolean"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "revision",
+          "confirmation_needed"
+        ],
+        "title": "PlanRef",
+        "type": "object"
+      },
+      "PlanReviewBlock": {
+        "description": "A plan-review block surfacing a plan revision for confirmation.",
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionDTO"
+            },
+            "title": "Criteria",
+            "type": "array"
+          },
+          "kind": {
+            "const": "plan_review",
+            "default": "plan_review",
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_revision": {
+            "default": 1,
+            "title": "Plan Revision",
+            "type": "integer"
+          },
+          "requires_confirmation": {
+            "default": true,
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "title": "PlanReviewBlock",
+        "type": "object"
+      },
+      "ProductCardBlock": {
+        "description": "A single product/part summary card. Figures are verified upstream.",
+        "properties": {
+          "catalog_edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Edition Id"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/FigureDTO"
+            },
+            "title": "Figures",
+            "type": "array"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade"
+          },
+          "kind": {
+            "const": "product_card",
+            "default": "product_card",
+            "title": "Kind",
+            "type": "string"
+          },
+          "part_number": {
+            "title": "Part Number",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "part_number"
+        ],
+        "title": "ProductCardBlock",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "description": "Refresh payload carrying the presented refresh token string.\n\nThe token may also be presented via the ``Authorization`` header; the body\nform is accepted for non-browser clients.",
+        "properties": {
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "description": "Registration payload: email + password only.\n\n``extra=\"ignore\"`` drops any unexpected field (including an injected\n``role``/privilege field) so it never reaches the use case.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RenameRequest": {
+        "description": "``PATCH /api/sessions/{id}`` body: a new title (validated in the service).",
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "RenameRequest",
+        "type": "object"
+      },
+      "ResponseEnvelope": {
+        "description": "The mandatory response envelope (design: Response_Envelope).\n\nThe inviolable contract is a non-empty ``session_id`` and a non-empty\n``answer``. All other fields are optional and typed. ``content_blocks`` is\nthe structural discriminated union above. The envelope never carries a\n``model`` name, tool name, prompt, or any secret.",
+        "properties": {
+          "answer": {
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "catalog_edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Edition Id"
+          },
+          "content_blocks": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bar_chart": "#/components/schemas/BarChartBlock",
+                  "clarification": "#/components/schemas/ClarificationBlock",
+                  "comparison_table": "#/components/schemas/ComparisonTableBlock",
+                  "matching_part_numbers": "#/components/schemas/MatchingPartNumbersBlock",
+                  "plan_review": "#/components/schemas/PlanReviewBlock",
+                  "product_card": "#/components/schemas/ProductCardBlock",
+                  "text": "#/components/schemas/TextBlock"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ProductCardBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ComparisonTableBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/MatchingPartNumbersBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/BarChartBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ClarificationBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/PlanReviewBlock"
+                }
+              ]
+            },
+            "title": "Content Blocks",
+            "type": "array"
+          },
+          "interpretation_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterpretationSummaryDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "session_id": {
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvelopeStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "answer"
+        ],
+        "title": "ResponseEnvelope",
+        "type": "object"
+      },
+      "SessionSummaryResponse": {
+        "description": "A ``GET /api/sessions`` listing entry (title decrypted after authorize).",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "pending_jobs": {
+            "default": 0,
+            "title": "Pending Jobs",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionSummaryResponse",
+        "type": "object"
+      },
+      "TextBlock": {
+        "description": "Plain conversational text. The universal safe fallback block.",
+        "properties": {
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "TextBlock",
+        "type": "object"
+      },
+      "TokenPairResponse": {
+        "description": "The issued access+refresh token pair returned to the client once.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "TokenPairResponse",
+        "type": "object"
+      },
+      "UserResponse": {
+        "description": "Registration result and ``/me`` body: identity + role only.\n\nContains NO password hash, token secret, or verifier (Property 9).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "email_verified"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "UserRole": {
+        "description": "Account role. ``developer`` is a Debug capability over the developer's\nOWN resources only \u2014 never a superuser (design: Authorization guard).",
+        "enum": [
+          "user",
+          "developer"
+        ],
+        "title": "UserRole",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Series 76 Technical Assistant \u2014 Backend API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "description": "Authenticate and issue an access+refresh pair (generic failures).",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Revoke the current session's tokens (other sessions keep working).",
+        "operationId": "logout_api_auth_logout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "Return the caller's identity and role \u2014 never any secret material.",
+        "operationId": "me_api_auth_me_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "description": "Rotate a refresh token atomically (single-winner; reuse revokes family).",
+        "operationId": "refresh_api_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "description": "Register a new account (role ``user``, assigned server-side).",
+        "operationId": "register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/conversation": {
+      "post": {
+        "description": "Run a mandatory sync turn; always returns a non-empty envelope.",
+        "operationId": "create_turn_api_conversation_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Turn",
+        "tags": [
+          "conversation"
+        ]
+      }
+    },
+    "/api/conversation/jobs": {
+      "post": {
+        "description": "Accept an async turn job (``202``/``QUEUED``); never substitutes sync.",
+        "operationId": "enqueue_turn_api_conversation_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Turn",
+        "tags": [
+          "conversation"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Return a minimal liveness payload (no sensitive information).",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "description": "Poll a job owner-scoped; returns one state + envelope on COMPLETED.",
+        "operationId": "poll_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Poll Job Api Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Poll Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Cancel a job idempotently (owner-only, cancelable states).",
+        "operationId": "cancel_job_api_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Cancel Job Api Jobs  Job Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "description": "Return readiness, distinguishing database from other dependencies.\n\nDistinguishes **database** availability from **other critical\ndependencies** \u2014 key material and the LLM **provider** (Property 49). A\ndegraded dependency is reported as a ``False`` flag so the process stays up\nand surfaces the degradation rather than crashing. Overall readiness\nrequires the database and key material; a degraded *provider* is reported\nbut does not, on its own, crash the service (the sync turn surfaces\n``UPSTREAM_UNAVAILABLE`` honestly).",
+        "operationId": "ready_api_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ready Api Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "description": "List the caller's conversations (optional owner-scoped title search).",
+        "operationId": "list_sessions_api_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSummaryResponse"
+                  },
+                  "title": "Response List Sessions Api Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}": {
+      "delete": {
+        "description": "Delete a conversation: tombstone, purge, crypto-shred (204).",
+        "operationId": "delete_session_api_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Session",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "patch": {
+        "description": "Rename a conversation (1-200 chars, owner-only).",
+        "operationId": "rename_session_api_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/messages": {
+      "get": {
+        "description": "Return the owner's messages + typed blocks in deterministic order.",
+        "operationId": "get_messages_api_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MessageResponse"
+                  },
+                  "title": "Response Get Messages Api Sessions  Session Id  Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Messages",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/messages/{message_id}/trace": {
+      "get": {
+        "description": "Return a sanitized trace to a developer-owner, else an identical denial.",
+        "operationId": "get_trace_api_sessions__session_id__messages__message_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Trace",
+        "tags": [
+          "trace"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/plans/{revision}/confirm": {
+      "post": {
+        "description": "Confirm the current plan revision; idempotent, owner-only.\n\nThe first confirmation of the current revision triggers its single\nexecution through the agent seam (after the confirmation committed); a\nrepeated confirmation executes nothing (Property 29, Spec 4 Req 6.5).",
+        "operationId": "confirm_plan_api_sessions__session_id__plans__revision__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "title": "Revision",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Confirm Plan Api Sessions  Session Id  Plans  Revision  Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    }
+  }
+}
