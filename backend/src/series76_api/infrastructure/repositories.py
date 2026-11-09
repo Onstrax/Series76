@@ -421,6 +421,13 @@ class MessageRepository:
 
         return await self._session.get(MessageORM, message_id)
 
+    async def delete(self, message_id: uuid.UUID) -> None:
+        """Delete one message (staged) — used to undo a failed turn's input."""
+
+        await self._session.execute(
+            delete(MessageORM).where(MessageORM.message_id == message_id)
+        )
+
     async def delete_for_session(self, session_id: uuid.UUID) -> None:
         """Purge all messages for a conversation (staged)."""
 

@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     interpreter_model: str = Field(default="", alias="INTERPRETER_MODEL")
     answer_model: str = Field(default="", alias="ANSWER_MODEL")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    # ``fake`` keeps the deterministic zero-spend seam (CI default);
+    # ``orchestrator`` mounts the Spec 4 agent (needs OPENROUTER_API_KEY + models).
+    agent_runtime: str = Field(default="fake", alias="AGENT_RUNTIME")
+    catalog_database_url: str = Field(default="", alias="CATALOG_DATABASE_URL")
 
     # --- Queue / cost / time limits (Half B honors these; declared here). ---
     pending_job_cap: int = Field(default=5, ge=1, le=100, alias="PENDING_JOB_CAP")

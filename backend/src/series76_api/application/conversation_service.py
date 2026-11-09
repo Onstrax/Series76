@@ -28,19 +28,16 @@ import uuid
 from dataclasses import dataclass
 
 from series76_api.api.envelopes import (
-    EnvelopeStatus,
-    PlanRef,
-    PlanReviewBlock,
     ResponseEnvelope,
-    TextBlock,
     parse_content_blocks,
 )
 from series76_api.application.agent_seam import (
     AgentPort,
-    OutcomeKind,
+    ConfirmationRequest,
     ProviderUnavailable,
     TurnOutcome,
     TurnRequest,
+    build_response_envelope,
 )
 from series76_api.application.authorization import authorize_ownership
 from series76_api.application.unit_of_work import UnitOfWork
@@ -48,6 +45,7 @@ from series76_api.domain.crypto import AADContext, CryptoPurpose
 from series76_api.domain.errors import (
     DomainError,
     ErrorCode,
+    GoneError,
     UpstreamUnavailableError,
     ValidationError,
 )
@@ -251,13 +249,15 @@ class ConversationService:
                     await self._uow.commit()
                     return env
 
+        created = session_id is None
         conv = await self._resolve_conversation(principal, session_id)
         dek = await self._ensure_dek(
             session_id=conv.session_id, owner_id=principal.user_id
         )
         history = await self._history(conv.session_id, principal.user_id, dek)
 
-        # Persist the user message (encrypted) before dispatching the turn.
+        # Phase A — persist the user message (encrypted) and COMMIT, so no SQL
+        # transaction is open while the agent calls the model (Spec 4 Req 4.3).
         user_msg_id = uuid.uuid4()
         self._persist_message(
             message_id=user_msg_id,
@@ -268,10 +268,10 @@ class ConversationService:
             blocks=None,
             dek=dek,
         )
+        await self._uow.commit()
 
-        # Run the turn against the faked agent seam (no provider spend). The
-        # ownership check already completed, so dispatch is authorized
-        # (Property 43).
+        # Phase B — run the turn outside any transaction. The ownership check
+        # already completed, so dispatch is authorized (Property 43).
         try:
             outcome = await self._agent.run_turn(
                 TurnRequest(
@@ -279,32 +279,141 @@ class ConversationService:
                     session_id=conv.session_id,
                     query=clean_query,
                     history=history,
+                    trace_id=str(user_msg_id),
                 )
             )
         except ProviderUnavailable as exc:
-            # A provider failure is a 503 UPSTREAM_UNAVAILABLE, never a success.
-            await self._uow.rollback()
+            # A provider failure is a 503 UPSTREAM_UNAVAILABLE, never a success;
+            # the turn leaves no partial effect behind.
+            await self._compensate(principal, conv.session_id, user_msg_id, created)
             raise UpstreamUnavailableError(str(exc)) from exc
+        except DomainError:
+            await self._compensate(principal, conv.session_id, user_msg_id, created)
+            raise
 
-        envelope, assistant_msg_id = self._build_envelope(conv.session_id, outcome)
+        # Phase C — persist the result in a separate short transaction.
+        return await self._persist_outcome(
+            principal, conv.session_id, outcome, dek, client_request_id=client_request_id
+        )
 
-        # Persist the assistant message (encrypted) + idempotency job record.
+    async def run_confirmation_turn(
+        self,
+        principal: AuthenticatedPrincipal,
+        session_id: uuid.UUID,
+        confirmation: ConfirmationRequest,
+    ) -> ResponseEnvelope:
+        """Execute a plan revision the plan seam just bound and confirmed.
+
+        Called only after the confirmation committed; the agent runs outside any
+        transaction and its result is persisted as an assistant message.
+        """
+
+        conv = await self._uow.conversations.get(session_id)
+        if conv is not None and conv.deleted_at is not None:
+            conv = None
+        authorize_ownership(principal, conv)
+        dek = await self._ensure_dek(session_id=session_id, owner_id=principal.user_id)
+        await self._uow.commit()
+        try:
+            outcome = await self._agent.run_turn(
+                TurnRequest(
+                    owner_id=principal.user_id,
+                    session_id=session_id,
+                    query="",
+                    confirmation=confirmation,
+                    trace_id=f"confirm:{confirmation.plan_id}:{confirmation.plan_revision}",
+                )
+            )
+        except ProviderUnavailable as exc:
+            raise UpstreamUnavailableError(str(exc)) from exc
+        return await self._persist_outcome(principal, session_id, outcome, dek)
+
+    async def _persist_outcome(
+        self,
+        principal: AuthenticatedPrincipal,
+        session_id: uuid.UUID,
+        outcome: TurnOutcome,
+        dek: bytes,
+        *,
+        client_request_id: str | None = None,
+    ) -> ResponseEnvelope:
+        """Persist the assistant message, trace, and idempotency record."""
+
+        conv = await self._uow.conversations.get(session_id)
+        if conv is None or conv.deleted_at is not None:
+            # Deleted while the turn ran: the late result must not resurrect it.
+            await self._uow.rollback()
+            raise GoneError("Resource not found.")
+        envelope, assistant_msg_id = self._build_envelope(session_id, outcome)
         self._persist_message(
             message_id=assistant_msg_id,
-            session_id=conv.session_id,
+            session_id=session_id,
             owner_id=principal.user_id,
             role="assistant",
             text=envelope.answer,
             blocks=[b.model_dump(mode="json") for b in envelope.content_blocks],
             dek=dek,
         )
+        if outcome.trace is not None:
+            await self._uow.flush()
+            self._persist_trace(
+                message_id=assistant_msg_id,
+                session_id=session_id,
+                owner_id=principal.user_id,
+                trace=outcome.trace,
+                dek=dek,
+            )
         if client_request_id:
             await self._record_idempotency_job(
-                principal, conv.session_id, client_request_id, envelope, dek
+                principal, session_id, client_request_id, envelope, dek
             )
-        await self._uow.conversations.touch(conv.session_id, at=self._clock.now())
+        await self._uow.conversations.touch(session_id, at=self._clock.now())
         await self._uow.commit()
         return envelope
+
+    async def _compensate(
+        self,
+        principal: AuthenticatedPrincipal,
+        session_id: uuid.UUID,
+        user_msg_id: uuid.UUID,
+        created: bool,
+    ) -> None:
+        """Undo phase A after a failed turn (no partial effect is left behind)."""
+
+        await self._uow.rollback()
+        if created:
+            from series76_api.application.deletion_service import DeletionService
+
+            await DeletionService(self._uow, self._clock).delete(principal, session_id)
+            return
+        await self._uow.messages.delete(user_msg_id)
+        await self._uow.commit()
+
+    def _persist_trace(
+        self,
+        *,
+        message_id: uuid.UUID,
+        session_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        trace: dict[str, object],
+        dek: bytes,
+    ) -> None:
+        """Encrypt (AES-256-GCM, purpose tool.trace) and stage the debug trace."""
+
+        trace_id = uuid.uuid4()
+        ciphertext = self._crypto.encrypt(
+            dek,
+            json.dumps(trace, sort_keys=True, default=str).encode("utf-8"),
+            self._aad(CryptoPurpose.TOOL_TRACE, owner_id, session_id, trace_id),
+        ).blob
+        row = self._uow.tool_traces.add(
+            message_id=message_id,
+            session_id=session_id,
+            owner_id=owner_id,
+            trace_ciphertext=ciphertext,
+            duration_ms=None,
+        )
+        row.id = trace_id
 
     def _persist_message(
         self,
@@ -346,24 +455,8 @@ class ConversationService:
         """Map a :class:`TurnOutcome` to a ``Response_Envelope`` (non-empty answer)."""
 
         assistant_msg_id = uuid.uuid4()
-        answer = outcome.answer or "Here is your response."
-        blocks = list(outcome.content_blocks)
-        plan_ref: PlanRef | None = None
-        if outcome.plan_summary is not None:
-            blocks.append(
-                PlanReviewBlock(
-                    summary=outcome.plan_summary, requires_confirmation=True
-                )
-            )
-        if not blocks:
-            blocks = [TextBlock(text=answer)]
-        envelope = ResponseEnvelope(
-            session_id=str(session_id),
-            answer=answer,
-            content_blocks=blocks,
-            status=outcome.status or EnvelopeStatus.COMPLETED,
-            plan=plan_ref,
-            turn_id=str(assistant_msg_id),
+        envelope = build_response_envelope(
+            session_id, outcome, turn_id=str(assistant_msg_id),
             message_id=str(assistant_msg_id),
         )
         return envelope, assistant_msg_id
@@ -610,4 +703,4 @@ __all__ = [
 
 
 # Avoid an unused-import error for ErrorCode/DomainError referenced in docs.
-_ = (ErrorCode, DomainError, OutcomeKind)
+_ = (ErrorCode, DomainError)

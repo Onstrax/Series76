@@ -170,6 +170,12 @@ class UpstreamUnavailableError(DomainError):
     code = ErrorCode.UPSTREAM_UNAVAILABLE
 
 
+class BudgetExceededError(DomainError):
+    """A per-turn budget limit was reached; the turn stopped fail-closed (503)."""
+
+    code = ErrorCode.BUDGET_EXCEEDED
+
+
 class CryptoError(DomainError):
     """Base for fail-closed crypto errors; maps to internal error by default."""
 
@@ -204,6 +210,7 @@ __all__ = [
     "StalePlanError",
     "GoneError",
     "UpstreamUnavailableError",
+    "BudgetExceededError",
     "CryptoError",
     "KeyUnavailableError",
     "DecryptionError",

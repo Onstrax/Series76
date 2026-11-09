@@ -191,6 +191,7 @@ def _sanitize_get_part(result: GetPartResult, context: ToolContext) -> ToolResul
             failure=result.failure,
             trace_id=context.trace_id,
             offending_input=result.offending_input,
+            payload=result,
         )
     assert result.view is not None
     facts: list[SanitizedFact] = []
@@ -204,12 +205,12 @@ def _sanitize_get_part(result: GetPartResult, context: ToolContext) -> ToolResul
     for m in result.view.measurements:
         facts.append(_metric_fact(f"measurement:{m.measurement_id}:fla", m.fla, m.evidence))
         facts.append(_metric_fact(f"measurement:{m.measurement_id}:lra", m.lra, m.evidence))
-    return ToolResult(facts=tuple(facts), trace_id=context.trace_id)
+    return ToolResult(facts=tuple(facts), trace_id=context.trace_id, payload=result)
 
 
 def _sanitize_search(result: SearchResult, context: ToolContext) -> ToolResult:
     if result.failure is not None and result.failure.name == "INVALID_FILTER":
-        return ToolResult(failure=result.failure, trace_id=context.trace_id)
+        return ToolResult(failure=result.failure, trace_id=context.trace_id, payload=result)
     # NO_RESULTS is a success with total 0.
     return ToolResult(
         failure=result.failure,
@@ -219,14 +220,15 @@ def _sanitize_search(result: SearchResult, context: ToolContext) -> ToolResult:
         next_cursor=result.next_cursor,
         extra_pns=tuple(c.part_number.canonical_pn for c in result.page),
         trace_id=context.trace_id,
+        payload=result,
     )
 
 
 def _sanitize_notes(result: SourceNotesResult, context: ToolContext) -> ToolResult:
     if result.failure is not None:
-        return ToolResult(failure=result.failure, trace_id=context.trace_id)
+        return ToolResult(failure=result.failure, trace_id=context.trace_id, payload=result)
     if result.not_documented:
-        return ToolResult(not_documented=True, trace_id=context.trace_id)
+        return ToolResult(not_documented=True, trace_id=context.trace_id, payload=result)
     facts = tuple(
         SanitizedFact(
             key=f"note:{note.note_id}",
@@ -239,7 +241,7 @@ def _sanitize_notes(result: SourceNotesResult, context: ToolContext) -> ToolResu
         )
         for note in result.notes
     )
-    return ToolResult(facts=facts, trace_id=context.trace_id)
+    return ToolResult(facts=facts, trace_id=context.trace_id, payload=result)
 
 
 def resolve_repository(context: ToolContext, repository: TypedRepository) -> TypedRepository:

@@ -32,16 +32,15 @@ from datetime import timedelta
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from series76_api.api.envelopes import (
-    EnvelopeStatus,
-    PlanReviewBlock,
     ResponseEnvelope,
-    TextBlock,
 )
 from series76_api.application.agent_seam import (
     AgentPort,
     OutcomeKind,
     ProviderUnavailable,
+    TurnOutcome,
     TurnRequest,
+    build_response_envelope,
 )
 from series76_api.application.unit_of_work import UnitOfWork
 from series76_api.domain.crypto import AADContext, CryptoPurpose
@@ -131,6 +130,7 @@ class WorkerService:
                     owner_id=claimed.owner_id,
                     session_id=claimed.session_id,
                     query=claimed.query,
+                    trace_id=str(claimed.job_id),
                 )
             )
         except ProviderUnavailable:
@@ -138,13 +138,7 @@ class WorkerService:
             await self._fail_phase(claimed)
             return claimed.job_id
 
-        state = (
-            JobState.NEEDS_CLARIFICATION
-            if outcome.outcome_kind is OutcomeKind.CLARIFICATION
-            else JobState.AWAITING_CONFIRMATION
-            if outcome.outcome_kind is OutcomeKind.CONFIRMATION
-            else JobState.COMPLETED
-        )
+        state = _JOB_STATE_BY_OUTCOME.get(outcome.outcome_kind, JobState.COMPLETED)
         envelope = self._build_envelope(claimed.session_id, outcome)
         result_ct = await self._encrypt_result(claimed, envelope)
         if result_ct is None:
@@ -288,23 +282,17 @@ class WorkerService:
     def _build_envelope(
         self, session_id: uuid.UUID, outcome: object
     ) -> ResponseEnvelope:
-        from series76_api.application.agent_seam import TurnOutcome
-
         assert isinstance(outcome, TurnOutcome)
-        answer = outcome.answer or "Here is your response."
-        blocks = list(outcome.content_blocks)
-        if outcome.plan_summary is not None:
-            blocks.append(
-                PlanReviewBlock(summary=outcome.plan_summary, requires_confirmation=True)
-            )
-        if not blocks:
-            blocks = [TextBlock(text=answer)]
-        return ResponseEnvelope(
-            session_id=str(session_id),
-            answer=answer,
-            content_blocks=blocks,
-            status=outcome.status or EnvelopeStatus.COMPLETED,
-        )
+        return build_response_envelope(session_id, outcome)
+
+
+#: Turn outcome -> durable Job_State (Spec 4 Turn_State mapped at this boundary).
+_JOB_STATE_BY_OUTCOME: dict[OutcomeKind, JobState] = {
+    OutcomeKind.CLARIFICATION: JobState.NEEDS_CLARIFICATION,
+    OutcomeKind.CONFIRMATION: JobState.AWAITING_CONFIRMATION,
+    OutcomeKind.STALE_PLAN: JobState.STALE_PLAN,
+    OutcomeKind.CATALOG_WITHDRAWN: JobState.CATALOG_WITHDRAWN,
+}
 
 
 __all__ = ["WorkerService"]

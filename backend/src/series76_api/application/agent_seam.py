@@ -24,7 +24,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
-from series76_api.api.envelopes import ContentBlock, EnvelopeStatus, TextBlock
+from series76_api.api.envelopes import (
+    ContentBlock,
+    EnvelopeStatus,
+    InterpretationSummaryDTO,
+    PlanRef,
+    PlanReviewBlock,
+    ResponseEnvelope,
+    TextBlock,
+)
 
 
 class OutcomeKind(str, Enum):
@@ -40,6 +48,25 @@ class OutcomeKind(str, Enum):
     CLARIFICATION = "CLARIFICATION"
     CONFIRMATION = "CONFIRMATION"
     UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE"
+    STALE_PLAN = "STALE_PLAN"
+    CATALOG_WITHDRAWN = "CATALOG_WITHDRAWN"
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationRequest:
+    """A confirmation the plan seam has validated and materialized.
+
+    ``bound_to_current`` is set only when the confirmed revision is the
+    conversation's current revision for its authenticated owner;
+    ``first_confirmation`` is ``True`` only for the confirmation that triggers
+    the (single) execution of that revision.
+    """
+
+    plan_id: str
+    plan_revision: int
+    user_id: uuid.UUID
+    bound_to_current: bool
+    first_confirmation: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +81,8 @@ class TurnRequest:
     session_id: uuid.UUID
     query: str
     history: tuple[tuple[str, str], ...] = ()
+    confirmation: ConfirmationRequest | None = None
+    trace_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +101,11 @@ class TurnOutcome:
     plan_summary: str | None = None
     verified_figures: tuple[float, ...] = ()
     extra: dict[str, Any] = field(default_factory=dict)
+    interpretation_summary: InterpretationSummaryDTO | None = None
+    plan: PlanRef | None = None
+    warnings: tuple[str, ...] = ()
+    catalog_edition_id: str | None = None
+    trace: dict[str, Any] | None = None
 
 
 class AgentPort(Protocol):
@@ -144,8 +178,45 @@ class FakeAgent:
         )
 
 
+def build_response_envelope(
+    session_id: uuid.UUID,
+    outcome: TurnOutcome,
+    *,
+    turn_id: str | None = None,
+    message_id: str | None = None,
+) -> ResponseEnvelope:
+    """Map a :class:`TurnOutcome` onto the inviolable ``Response_Envelope``.
+
+    ``answer`` is never empty; a plan summary from a seam implementation adds a
+    plan-review block; an outcome with no block falls back to a text block.
+    """
+
+    answer = outcome.answer or "Here is your response."
+    blocks = list(outcome.content_blocks)
+    if outcome.plan_summary is not None:
+        blocks.append(
+            PlanReviewBlock(summary=outcome.plan_summary, requires_confirmation=True)
+        )
+    if not blocks:
+        blocks = [TextBlock(text=answer)]
+    return ResponseEnvelope(
+        session_id=str(session_id),
+        answer=answer,
+        content_blocks=blocks,
+        status=outcome.status or EnvelopeStatus.COMPLETED,
+        interpretation_summary=outcome.interpretation_summary,
+        plan=outcome.plan,
+        warnings=list(outcome.warnings),
+        catalog_edition_id=outcome.catalog_edition_id,
+        turn_id=turn_id,
+        message_id=message_id,
+    )
+
+
 __all__ = [
+    "build_response_envelope",
     "OutcomeKind",
+    "ConfirmationRequest",
     "TurnRequest",
     "TurnOutcome",
     "AgentPort",

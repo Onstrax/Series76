@@ -54,6 +54,30 @@ def _build_crypto(settings: Settings) -> CryptoService:
     return service
 
 
+def select_agent(
+    settings: Settings, session_factory: object, crypto: CryptoService
+) -> AgentPort:
+    """Choose the agent runtime from ``AGENT_RUNTIME`` (``fake`` | ``orchestrator``).
+
+    ``fake`` (the CI default) keeps the deterministic zero-spend seam;
+    ``orchestrator`` mounts the Spec 4 agent, which itself degrades to a clear
+    503 when the model runtime is not configured.
+    """
+
+    if settings.agent_runtime.strip().lower() != "orchestrator":
+        return FakeAgent()
+    from series76_agent.seam import build_series76_agent
+
+    agent: AgentPort = build_series76_agent(
+        session_factory=session_factory,
+        crypto=crypto,
+        database_url=settings.database_url,
+        catalog_database_url=settings.catalog_database_url,
+        api_key=settings.openrouter_api_key,
+    )
+    return agent
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -73,10 +97,11 @@ def create_app(
     resolved_settings = settings or get_settings()
     resolved_clock = clock or SystemClock()
     resolved_crypto = crypto or _build_crypto(resolved_settings)
-    resolved_agent: AgentPort = agent or FakeAgent()
-
     engine = create_app_engine(resolved_settings.database_url)
     session_factory = create_session_factory(engine)
+    resolved_agent: AgentPort = agent or select_agent(
+        resolved_settings, session_factory, resolved_crypto
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

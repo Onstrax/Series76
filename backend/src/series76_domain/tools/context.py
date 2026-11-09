@@ -19,7 +19,14 @@ from decimal import Decimal
 
 from series76_domain.model.enums import DataStatus, SemanticFailureCode
 from series76_domain.model.evidence import EvidenceReference
+from series76_domain.operations.results import GetPartResult, SearchResult, SourceNotesResult
 from series76_domain.repository.port import TypedRepository
+
+# The typed operation result a tool produced. It is **server-side only**: the
+# agent layer (Spec 4) binds figures from it with their full service /
+# frequency / supply context, while only the sanitized facts are ever shown to
+# a language model.
+OperationPayload = GetPartResult | SearchResult | SourceNotesResult
 
 # A factory that yields the edition-pinned repository for a resolved context.
 RepositoryFactory = Callable[["ToolContext"], TypedRepository]
@@ -85,6 +92,9 @@ class ToolResult:
         next_cursor: for search pagination.
         trace_id: echoed server trace id (never a model value).
         offending_input: a secret-free reference to the offending input, if any.
+        payload: the typed operation result (server-side only, never
+            serialized to a model); excluded from equality so the A/B parity of
+            Set A and Set B is judged on the sanitized surface.
     """
 
     facts: tuple[SanitizedFact, ...] = ()
@@ -97,6 +107,7 @@ class ToolResult:
     trace_id: str = ""
     offending_input: str | None = None
     extra_pns: tuple[str, ...] = field(default=())
+    payload: OperationPayload | None = field(default=None, compare=False, repr=False)
 
     @property
     def ok(self) -> bool:

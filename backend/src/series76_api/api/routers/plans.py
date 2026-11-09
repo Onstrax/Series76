@@ -16,8 +16,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header
 
-from series76_api.api.dependencies import ClockDep, CryptoDep, SessionDep
+from series76_api.api.dependencies import AgentDep, ClockDep, CryptoDep, SessionDep
+from series76_api.application.agent_seam import ConfirmationRequest
 from series76_api.application.authorization import authenticate
+from series76_api.application.conversation_service import ConversationService
 from series76_api.application.plans_service import PlansService
 from series76_api.application.unit_of_work import UnitOfWork
 from series76_api.domain.errors import ValidationError
@@ -39,9 +41,15 @@ async def confirm_plan(
     session: SessionDep,
     clock: ClockDep,
     crypto: CryptoDep,
+    agent: AgentDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
-    """Confirm the current plan revision; idempotent, owner-only."""
+    """Confirm the current plan revision; idempotent, owner-only.
+
+    The first confirmation of the current revision triggers its single
+    execution through the agent seam (after the confirmation committed); a
+    repeated confirmation executes nothing (Property 29, Spec 4 Req 6.5).
+    """
 
     sid = _parse_uuid(session_id, "session id")
     async with UnitOfWork(session) as uow:
@@ -50,10 +58,26 @@ async def confirm_plan(
         principal = await authenticate(uow, clock, authorization)
         service = PlansService(uow, clock, crypto)
         result = await service.confirm(principal, sid, revision)
+        envelope = None
+        if result.executed:
+            envelope = await ConversationService(
+                uow, clock, crypto, agent
+            ).run_confirmation_turn(
+                principal,
+                sid,
+                ConfirmationRequest(
+                    plan_id=str(result.plan_id),
+                    plan_revision=result.plan_revision,
+                    user_id=principal.user_id,
+                    bound_to_current=True,
+                    first_confirmation=True,
+                ),
+            )
     return {
         "plan_id": str(result.plan_id),
         "plan_revision": result.plan_revision,
         "status": "confirmed",
+        "result": envelope.model_dump(mode="json") if envelope is not None else None,
     }
 
 

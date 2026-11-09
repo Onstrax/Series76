@@ -18,8 +18,8 @@ import asyncio
 import contextlib
 import sys
 
-from series76_api.app import _build_crypto
-from series76_api.application.agent_seam import AgentPort, FakeAgent
+from series76_api.app import _build_crypto, select_agent
+from series76_api.application.agent_seam import AgentPort
 from series76_api.application.worker_service import WorkerService
 from series76_api.infrastructure.clock import Clock, SystemClock
 from series76_api.infrastructure.crypto import CryptoService
@@ -45,9 +45,9 @@ def build_worker(
 
     resolved_clock = clock or SystemClock()
     resolved_crypto = crypto or _build_crypto(settings)
-    resolved_agent: AgentPort = agent or FakeAgent()
     engine = create_app_engine(settings.database_url)
     session_factory = create_session_factory(engine)
+    resolved_agent: AgentPort = agent or select_agent(settings, session_factory, resolved_crypto)
     worker = WorkerService(
         session_factory, resolved_clock, resolved_crypto, resolved_agent, settings
     )

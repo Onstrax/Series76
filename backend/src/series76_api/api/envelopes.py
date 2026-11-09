@@ -62,6 +62,93 @@ class BlockKind(str, Enum):
 class _BlockBase(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    schema_version: int = 1
+
+
+# --- typed figure fields (populated by Spec 4 from the Spec 2 figure set) ----
+#
+# Every technical number a client renders is read from one of these typed
+# fields — never parsed from ``answer`` prose (Spec 5 Property 1). ``value`` is
+# the canonical Decimal string at the stored precision (digit-for-digit), and is
+# ``None`` exactly when ``status`` is not ``AVAILABLE`` (N/A / absent are
+# explicit states, never zero).
+
+
+class EvidenceDTO(BaseModel):
+    """The published source cells/rows/notes a figure resolves to."""
+
+    model_config = ConfigDict(frozen=True)
+
+    cell_refs: list[int] = Field(default_factory=list)
+    row_refs: list[int] = Field(default_factory=list)
+    note_refs: list[int] = Field(default_factory=list)
+
+
+class FigureDTO(BaseModel):
+    """One verified figure (or explicit absence) with its full context."""
+
+    model_config = ConfigDict(frozen=True)
+
+    figure_id: str
+    metric_key: str
+    label: str
+    value: str | None = None
+    unit: str | None = None
+    status: str
+    part_number: str
+    service: str | None = None
+    frequency_hz: str | None = None
+    supply: str | None = None
+    derived: bool = False
+    formula: str | None = None
+    precision_decimals: int | None = None
+    evidence: EvidenceDTO = Field(default_factory=EvidenceDTO)
+
+
+class ComparisonRowDTO(BaseModel):
+    """One metric compared across parts, with comparability and context."""
+
+    model_config = ConfigDict(frozen=True)
+
+    metric_key: str
+    label: str
+    cells: list[FigureDTO] = Field(default_factory=list)
+    comparable: bool = False
+    warning: str | None = None
+    winner_part_number: str | None = None
+    supply_heterogeneous: bool = False
+
+
+class BarPointDTO(BaseModel):
+    """One bar of a comparable chart; an N/A/absent point carries no value."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str
+    figure: FigureDTO
+
+
+class CriterionDTO(BaseModel):
+    """One criterion of an interpretation summary with exactly one category."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    category: Literal["documented-fact", "user-assumption", "proposal", "delegation"]
+
+
+class InterpretationSummaryDTO(BaseModel):
+    """The always-visible interpretation of a turn (no internals leaked)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    intent: str
+    applied: list[CriterionDTO] = Field(default_factory=list)
+    proposed: list[CriterionDTO] = Field(default_factory=list)
+    delegated: list[CriterionDTO] = Field(default_factory=list)
+    ignored: list[CriterionDTO] = Field(default_factory=list)
+    expected_presentation_format: str
+
 
 class TextBlock(_BlockBase):
     """Plain conversational text. The universal safe fallback block."""
@@ -76,6 +163,9 @@ class ProductCardBlock(_BlockBase):
     kind: Literal[BlockKind.PRODUCT_CARD] = BlockKind.PRODUCT_CARD
     part_number: str
     fields: dict[str, str] = Field(default_factory=dict)
+    figures: list[FigureDTO] = Field(default_factory=list)
+    grade: str | None = None
+    catalog_edition_id: str | None = None
 
 
 class ComparisonTableBlock(_BlockBase):
@@ -84,6 +174,8 @@ class ComparisonTableBlock(_BlockBase):
     kind: Literal[BlockKind.COMPARISON_TABLE] = BlockKind.COMPARISON_TABLE
     columns: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
+    part_numbers: list[str] = Field(default_factory=list)
+    metric_rows: list[ComparisonRowDTO] = Field(default_factory=list)
 
 
 class MatchingPartNumbersBlock(_BlockBase):
@@ -94,6 +186,11 @@ class MatchingPartNumbersBlock(_BlockBase):
     part_numbers: list[str] = Field(default_factory=list)
     page: int = 1
     page_size: int = 0
+    verified: list[str] = Field(default_factory=list)
+    preliminary: list[str] = Field(default_factory=list)
+    is_complete: bool = True
+    top_one: bool = False
+    winner_part_number: str | None = None
 
 
 class BarChartBlock(_BlockBase):
@@ -103,6 +200,9 @@ class BarChartBlock(_BlockBase):
     labels: list[str] = Field(default_factory=list)
     values: list[float] = Field(default_factory=list)
     unit: str = ""
+    metric_key: str = ""
+    comparable: bool = False
+    points: list[BarPointDTO] = Field(default_factory=list)
 
 
 class ClarificationBlock(_BlockBase):
@@ -120,6 +220,8 @@ class PlanReviewBlock(_BlockBase):
     plan_revision: int = 1
     summary: str = ""
     requires_confirmation: bool = True
+    plan_id: str | None = None
+    criteria: list[CriterionDTO] = Field(default_factory=list)
 
 
 ContentBlock = Annotated[
@@ -199,7 +301,7 @@ class ResponseEnvelope(BaseModel):
     answer: str = Field(min_length=1)
     content_blocks: list[ContentBlock] = Field(default_factory=list)
     status: EnvelopeStatus | None = None
-    interpretation_summary: str | None = None
+    interpretation_summary: InterpretationSummaryDTO | None = None
     plan: PlanRef | None = None
     warnings: list[str] = Field(default_factory=list)
     request_id: str | None = None
@@ -212,6 +314,12 @@ __all__ = [
     "ErrorDetail",
     "ErrorEnvelope",
     "BlockKind",
+    "EvidenceDTO",
+    "FigureDTO",
+    "ComparisonRowDTO",
+    "BarPointDTO",
+    "CriterionDTO",
+    "InterpretationSummaryDTO",
     "TextBlock",
     "ProductCardBlock",
     "ComparisonTableBlock",
