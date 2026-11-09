@@ -35,14 +35,35 @@ This section lists only what has been executed. Everything else is marked
   `verified_replay` manifest and the golden dataset (1012 cells). Level `01` publishes that
   edition into a fresh PostgreSQL and finds every stored cell equal to its golden cell;
   the result is in the evidence store.
-- **[EXPERIMENT] — Android.** No Gradle build, JVM test run or emulator run has been
-  executed (no Android SDK in the authoring environment). See `android/README.md`.
-- **[EXPERIMENT] — live model evaluation.** One live canary turn has been executed through
-  the Compose stack with `openai/gpt-oss-120b` for every function. Every figure in the
-  answer was checked against the PDF, and the turn cost USD 0.0018 cumulative per the
-  ledger (evidence `canary:openai/gpt-oss-120b`). The paired A/B comparison between
-  `gpt-oss-120b`, `deepseek-v4-flash` and `gemini-2.5-flash-lite` has not run yet, so no
-  model or tool-set winner has been declared.
+- **[EXPERIMENT] — Android.** The owner built the app with Gradle. The first runs exposed
+  three compile errors and two failing JVM properties (43 tests ran, 41 passed). All five
+  are fixed (`02995e1`), but the JVM suite has not been re-run since, and no emulator or
+  instrumented run has been executed. See `android/README.md`.
+- **Live model evaluation: executed (paired A/B).** `python -m series76_eval ab-live` ran the
+  36-scenario bilingual suite through the real API of the Compose stack, once per
+  configuration. One model function was varied at a time, with no fallback, and spend
+  comes from the stack's own ledger. Only two functions call a model: interpretation and
+  tool calling.
+
+  | Function | gpt-oss-120b | deepseek-v4-flash | gemini-2.5-flash-lite |
+  |---|---|---|---|
+  | Interpretation | **28/36** | 26/36 | 0/36 (request schema rejected, HTTP 400) |
+  | Tool calling | 28/36 | **29/36** | 24/36 |
+
+  - Every configuration had zero numeric discrepancies against the golden dataset and
+    zero leaks.
+  - By the Spec 6 selection rule (most critical successes), the selection is
+    `gpt-oss-120b` for interpretation and `deepseek-v4-flash` for tool calling. The
+    tool-calling margin is a single scenario in a single run.
+  - The A/B also exposed defects shared by every model: undocumented attributes such as
+    price, follow-ups and ordinals, language switches, AC/DC supply semantics, and "not X"
+    on multi-valued fields. They were fixed deterministically.
+  - The selected configuration on the final code scores **35/36**, with zero numeric
+    discrepancies, USD 0.021 and a 4.1 s median (`docs/evidence/ab/20261109T221422Z/`). The
+    remaining miss, S09, asks which current (FLA or LRA) "corriente" means.
+  - Cumulative ledger: USD 0.89. USD 0.56 of it are pre-call estimates charged for
+    Gemini requests that were rejected, so the real spend is lower.
+
 - **Docker Compose cold start: executed.** The owner ran `docker compose up --build` from
   a clean clone of `2d2b04e`. All six checks passed:
   - `migrate` exited 0 and published the audited edition;
@@ -348,11 +369,21 @@ The `fresh_extraction` extractor is a stub and is not delivered (owner decision,
   `GEMINI_API_KEY`; by owner decision (time) the delivered and default path is
   `verified_replay`, which makes no model call. Spec 6 Requirement 6.11 (one documented fresh
   extraction run) is therefore unmet.
-- **Android code, build and tests are unexecuted** [EXPERIMENT].
-- **Live model evaluation and cost measurements have not been run**, and no model has been
-  selected [EXPERIMENT].
-- **The twelve end-to-end demo flows and the cold-start reproduction are pending evidence.**
-  `python -m series76_eval status` shows them.
+- **Android** [EXPERIMENT]: built; JVM suite fixes not yet re-run; emulator and
+  instrumented tests not run (see above).
+- **`google/gemini-2.5-flash-lite` cannot serve interpretation.** The router rejects the
+  recursive structured-output schema (HTTP 400), although its endpoints advertise
+  structured outputs. `probe-models` checks the advertised capability, not schema
+  compatibility.
+- **The ledger over-counts rejected requests.** A failed provider call is charged at the
+  pre-call estimate (USD 0.01) because some failures are billed. Requests rejected before
+  generation are therefore over-counted (USD 0.56 in the A/B).
+- **"Corriente" without a qualifier** may be asked back (FLA or LRA): scenario S09 in the
+  final run.
+- **The A/B ran once per configuration.** Margins of one scenario, such as tool calling
+  29 vs 28, are within run-to-run variation.
+- **The twelve end-to-end demo flows are pending evidence.** `python -m series76_eval
+  status` shows them.
 
 ## Evaluation harness
 

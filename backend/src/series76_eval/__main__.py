@@ -214,10 +214,13 @@ def _ab_report(args: list[str], out: Callable[[str], object]) -> int:
         lines.append(f"| {r.config.label} | {r.successes}/{n} | {r.numeric_discrepancies} | "
                      f"{r.leaks} | {r.config_applied} | {r.spent_usd:.6f} | "
                      f"{r.median_latency_s} |")
-    lines += ["", "## Selection per function", ""]
-    for fn in ("INTERPRETATION", "TOOL_CALLING"):
-        model, why = choose(fn, reports)
-        lines.append(f"- **{fn}**: {model or 'no winner'} — {why}")
+    if len(reports) > 1:
+        lines += ["", "## Selection per function", ""]
+        for fn in ("INTERPRETATION", "TOOL_CALLING"):
+            model, why = choose(fn, reports)
+            lines.append(f"- **{fn}**: {model or 'no winner'} — {why}")
+    else:
+        lines += ["", "A single configuration was measured (no selection is made from it)."]
     lines += ["", "## Failed scenarios", ""]
     for r in reports:
         bad = [s.scenario for s in r.scores if not s.success]
