@@ -177,6 +177,9 @@ DERIVED_CALCULATION, EXPLANATION, FOLLOWUP, OUT_OF_SCOPE. Set confident=false if
 the user's stated requirements.
 - Filters use only these fields: {fields}; operators EQ, NE, LT, LE, GT, GE, IN; units \
 in-lbs, Nm, W, A, Hz, V, s, %, count. Values are strings. Never write SQL.
+- Documented values: service is "On/Off" or "Modulating" (a service type, never a \
+current mode); current_mode is "AC" or "DC" (an AC/DC supply has both). "Parts without \
+X" is a NOT node around X.
 - Criteria groups: ENVIRONMENT_ENCLOSURE, POWER_SUPPLY, SERVICE_TYPE, REQUIRED_TORQUE; \
 status SPECIFIED, NO_PREFERENCE, UNKNOWN, DELEGATED, UNSPECIFIED, CONFLICTING; strength \
 HARD or PREFERENCE.
@@ -480,11 +483,41 @@ def _prune_filter(
         "type": "predicate",
         "field": field.value,
         "operator": node.get("operator"),
-        "value": value,
+        "value": canonical_value(field, value),
     }
     if unit is not None:
         out["unit"] = unit
     return out
+
+
+#: Documented values of the categorical fields and the ES/EN words that name
+#: them. Applied deterministically after the model, so a filter compares
+#: catalog values ("Modulating"), never the user's wording ("modulante").
+CATEGORICAL_SYNONYMS: dict[AllowlistField, dict[str, str]] = {
+    AllowlistField.SERVICE: {
+        "on/off": "On/Off", "on-off": "On/Off", "on off": "On/Off", "onoff": "On/Off",
+        "todo o nada": "On/Off", "todo-nada": "On/Off", "encendido/apagado": "On/Off",
+        "modulating": "Modulating", "modulation": "Modulating", "modulante": "Modulating",
+        "modulación": "Modulating", "modulacion": "Modulating", "modulado": "Modulating",
+    },
+    AllowlistField.CURRENT_MODE: {
+        "ac": "AC", "alterna": "AC", "corriente alterna": "AC", "alternating": "AC",
+        "dc": "DC", "continua": "DC", "corriente continua": "DC", "direct": "DC",
+    },
+}
+
+
+def canonical_value(field: AllowlistField, value: Any) -> Any:
+    """Map a categorical value (or list) to the catalog's documented spelling."""
+
+    table = CATEGORICAL_SYNONYMS.get(field)
+    if table is None:
+        return value
+    if isinstance(value, list):
+        return [canonical_value(field, v) for v in value]
+    if isinstance(value, str):
+        return table.get(value.strip().casefold(), value)
+    return value
 
 
 def _criterion(

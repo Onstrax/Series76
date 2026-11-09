@@ -41,7 +41,7 @@ async def poll_job(
     settings: SettingsDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
-    """Poll a job owner-scoped; returns one state + envelope on COMPLETED."""
+    """Poll a job owner-scoped; returns its state + the envelope once one exists."""
 
     jid = _parse_job_id(job_id)
     async with UnitOfWork(session) as uow:

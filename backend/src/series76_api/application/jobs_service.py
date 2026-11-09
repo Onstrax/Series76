@@ -33,6 +33,15 @@ from series76_api.infrastructure.orm import ConversationORM, TurnJobORM
 from series76_api.infrastructure.repositories import CANCELABLE_JOB_STATES
 from series76_api.infrastructure.settings import Settings
 
+#: Job states whose persisted Response_Envelope is returned when polled.
+_ENVELOPE_STATES = frozenset({
+    JobState.COMPLETED,
+    JobState.NEEDS_CLARIFICATION,
+    JobState.AWAITING_CONFIRMATION,
+    JobState.STALE_PLAN,
+    JobState.CATALOG_WITHDRAWN,
+})
+
 # Retry-After bounds for non-terminal poll responses (Property 20).
 RETRY_AFTER_MIN = 1
 RETRY_AFTER_MAX = 60
@@ -226,7 +235,9 @@ class JobsService:
 
         envelope: ResponseEnvelope | None = None
         retry_after: int | None = None
-        if job.job_state == JobState.COMPLETED and job.result_ciphertext is not None:
+        if job.job_state in _ENVELOPE_STATES and job.result_ciphertext is not None:
+            # A clarification question / plan to confirm is the turn's answer:
+            # the client must receive it to show it (envelope ``status``).
             envelope = await self._decrypt_envelope(principal, job)
         if job.job_state in CANCELABLE_JOB_STATES:
             retry_after = _DEFAULT_RETRY_AFTER

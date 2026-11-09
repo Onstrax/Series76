@@ -10,6 +10,7 @@ Commands (run from ``backend/``):
 * ``repro-check`` / ``config-check`` — static delivery and ``.kiro/`` checks;
 * ``integrity`` — SHA-256 of the source PDF vs the handoff's trusted ``SHA256SUMS.txt``;
 * ``contract-snapshot [--write]`` — compare (or rewrite) ``docs/contract/openapi.json``;
+* ``ab-live <compose dir>`` — the paired A/B over a running stack;
 * ``probe-models`` — verify configured models' capabilities on OpenRouter's public
   endpoint list and print ``MODEL_CAPABILITIES``;
 * ``live-eval`` — the cost-gated live level (refuses without a key and an
@@ -81,6 +82,110 @@ def _documental_verify(out: Callable[[str], object]) -> int:
     for m in report.mismatches[:50]:
         out(f"  - {m.cell}: expected {m.expected!r}, observed {m.observed!r}\n")
     return 0 if report.passed else 1
+
+
+def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
+    """Paired A/B over a running Compose stack (Spec 6 Req 3, Test_Level 7).
+
+    ``ab-live <compose dir> [project]``. Needs ``AB_EMAIL``/``AB_PASSWORD`` (an
+    account of that stack). Model candidates come from the stack's ``.env``.
+    Refuses unless the stack's cumulative ledger leaves enough dev/eval budget.
+    """
+
+    import datetime
+    import json
+    import platform
+    from decimal import Decimal
+
+    from dotenv import dotenv_values
+
+    from series76_agent.domain.ledger import DEV_EVAL_CAP_USD
+    from series76_agent.models import _split
+    from series76_eval.ab_live import (
+        Compose,
+        StackClient,
+        choose,
+        plan_configs,
+        run_live,
+    )
+    from series76_eval.evidence import EvidenceRecord, git_commit, now_iso, redact
+
+    if not args:
+        out("usage: ab-live <compose dir> [project]\n")
+        return 2
+    compose = Compose(Path(args[0]).resolve(), args[1] if len(args) > 1 else "s76cold")
+    env = dotenv_values(compose.directory / ".env")
+    email, password = os.environ.get("AB_EMAIL"), os.environ.get("AB_PASSWORD")
+    if not (email and password and GOLDEN.exists()):
+        out("refused: needs AB_EMAIL, AB_PASSWORD and the audited golden dataset\n")
+        return 2
+    baseline = str(env.get("AGENT_MODEL") or "")
+    candidates = {
+        "INTERPRETATION": _split(env.get("INTERPRETER_MODEL_CANDIDATES")),
+        "TOOL_CALLING": _split(env.get("AGENT_MODEL_CANDIDATES")),
+    }
+    configs = plan_configs(baseline, candidates)
+    spent = sum((Decimal(str(e.get("cost_usd", "0"))) for e in compose.ledger()), Decimal(0))
+    estimate = Decimal("0.15") * len(configs)  # generous: measured ~USD 0.002 per turn
+    if spent + estimate > DEV_EVAL_CAP_USD:
+        out(f"refused: ledger USD {spent} + estimate USD {estimate} exceeds the dev/eval cap\n")
+        return 2
+    out(f"ledger before: USD {spent}; {len(configs)} configurations; "
+        f"estimate <= USD {estimate}\n")
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+    out_dir = REPO / "docs" / "evidence" / "ab" / stamp
+    client = StackClient("http://localhost:8000", email, password)
+    reports = run_live(compose, client, configs, doc, out_dir, log=lambda m: out(m + "\n"))
+    total = sum((Decimal(str(e.get("cost_usd", "0"))) for e in compose.ledger()), Decimal(0))
+
+    store = _store()
+    commit = git_commit(BACKEND)
+    for r in reports:
+        failures = [f"{s.scenario} ({s.behavior}): {'; '.join(s.notes) or 'behavior'}"
+                    for s in r.scores if not s.success]
+        store.persist(EvidenceRecord(
+            claim_id=f"ab:{r.config.label}",
+            command=f"python -m series76_eval ab-live (config {r.config.label})",
+            date=now_iso(), commit=commit,
+            environment=f"{platform.system()} {platform.release()} / Compose stack / OpenRouter",
+            result=Result.PASSED if r.gate_ok and r.config_applied else Result.FAILED,
+            sanitized_log=redact("\n".join([
+                f"models: {dict(r.config.models)}; ledger models: {dict(r.models_used)}",
+                f"successes {r.successes}/{len(r.scores)}; numeric discrepancies "
+                f"{r.numeric_discrepancies}; leaks {r.leaks}; spend USD {r.spent_usd}; "
+                f"median latency {r.median_latency_s}s",
+                *failures[:12],
+            ])),
+            case_count=r.successes, denominator=len(r.scores),
+            no_critical_defects=r.gate_ok,
+            known_limits="one run per configuration; deterministic envelope checks "
+                         "(fidelity, expected golden figures, observable behavior); "
+                         "set-valued filter results are not compared to an exact set",
+            cumulative_cost_usd=total,
+        ))
+
+    lines = [f"# Paired A/B — {stamp}", "",
+             f"Commit `{commit}`. Every configuration ran the {len(reports[0].scores)}-scenario "
+             "suite once through the real API. Spend is the stack ledger's own record.", "",
+             "| Configuration | Successes | Numeric discrepancies | Leaks | Config verified "
+             "| Spend (USD) | Median latency (s) |", "|---|---|---|---|---|---|---|"]
+    for r in reports:
+        lines.append(f"| {r.config.label} | {r.successes}/{len(r.scores)} | "
+                     f"{r.numeric_discrepancies} | {r.leaks} | {r.config_applied} | "
+                     f"{r.spent_usd:.6f} | {r.median_latency_s} |")
+    lines += ["", "## Selection per function", ""]
+    for fn in candidates:
+        model, why = choose(fn, reports)
+        lines.append(f"- **{fn}**: {model or 'no winner'} — {why}")
+    lines += ["", "## Failed scenarios", ""]
+    for r in reports:
+        bad = [f"{s.scenario}" for s in r.scores if not s.success]
+        lines.append(f"- {r.config.label}: {', '.join(bad) or 'none'}")
+    lines += ["", f"Cumulative ledger after the run: USD {total}."]
+    (out_dir / "SUMMARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out("\n".join(lines) + "\n")
+    return 0
 
 
 def _probe_models(out: Callable[[str], object]) -> int:
@@ -241,6 +346,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         out("prerequisites present: run the staged evaluation (offline -> canary -> paired A/B).\n")
         return 0
+
+    if cmd == "ab-live":
+        return _ab_live(args[1:], out)
 
     if cmd == "probe-models":
         return _probe_models(out)

@@ -291,3 +291,16 @@ def test_property_9_no_edition_no_plan_and_unresolved(
     assert ("PART_NUMBER", ghost_pn) in unresolved
     assert ("FIELD", bad_field) in unresolved
     assert all(p.field.value != bad_field for p in predicates_of(draft.filter_ast))
+
+
+def test_categorical_filter_values_are_mapped_to_documented_values() -> None:
+    from series76_agent.interpreter import canonical_value
+    from series76_domain.model.filter_ast import AllowlistField
+
+    assert canonical_value(AllowlistField.SERVICE, "modulante") == "Modulating"
+    assert canonical_value(AllowlistField.SERVICE, " On-Off ") == "On/Off"
+    modes = canonical_value(AllowlistField.CURRENT_MODE, ["corriente continua", "AC"])
+    assert modes == ["DC", "AC"]
+    assert canonical_value(AllowlistField.SERVICE, "Modulating") == "Modulating"
+    assert canonical_value(AllowlistField.SERVICE, "weird") == "weird"  # never invented
+    assert canonical_value(AllowlistField.ENCLOSURE, "modulante") == "modulante"

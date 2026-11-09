@@ -213,13 +213,17 @@ OPENROUTER_API_KEY=<your key>
 AGENT_MODEL=<tool-calling model id>
 AGENT_MODEL_CANDIDATES=<model a>,<model b>        # >= 2 per function for the A/B evaluation
 INTERPRETER_MODEL=<model id>   INTERPRETER_MODEL_CANDIDATES=<a>,<b>
-ANSWER_MODEL=<model id>        ANSWER_MODEL_CANDIDATES=<a>,<b>
 FALLBACK_MODEL=<model id>      # used only if it preserves the required capabilities
-MODEL_CAPABILITIES={"<model id>": ["tools", "json_schema"]}
+MODEL_CAPABILITIES={"<model id>": ["tools", "structured_outputs"]}   # see probe-models
+MODEL_PROVIDERS={"<model id>": ["<provider>", ...]}                   # optional pinning
 OPENROUTER_DATA_COLLECTION=deny
 AGENT_TOOL_SET=B               # A = coarse tools, B = fine-grained (see ADR 0002)
 ```
 
+- **Only two functions call a model:** interpretation (structured output) and tool
+  calling. The answer text is composed deterministically from tool results, so no model
+  ever writes a number. `ANSWER_MODEL` is accepted for compatibility but no code path calls
+  it, and the A/B evaluation does not compare it.
 - **Models without verified capabilities are refused.** A model whose capabilities are not
   listed in `MODEL_CAPABILITIES` is rejected rather than guessed (fail closed).
 - **No configuration means a clear error, not an answer.** Without a key or a model, the API

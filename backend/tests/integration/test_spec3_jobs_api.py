@@ -265,3 +265,28 @@ async def test_property_22_accepted_jobs_durable_across_restart(
         resp = await client.get(f"/api/jobs/{job_id}", headers=headers)
         assert resp.status_code == 200
         assert resp.json()["status"] == "QUEUED"
+
+
+@pytest.mark.parametrize(("marker", "state"), [("[clarify]", "NEEDS_CLARIFICATION"),
+                                               ("[confirm]", "AWAITING_CONFIRMATION")])
+async def test_poll_returns_the_clarification_or_plan_the_user_must_answer(
+    marker: str, state: str, postgres_url: str, migrated_db_module: Config
+) -> None:
+    """The question (or plan) is the turn's answer: polling must deliver it."""
+
+    settings = build_settings(postgres_url)
+    async with spec3_client(postgres_url) as (client, _app, _clock):
+        email, headers = await register_and_login(client)
+        accepted = await _enqueue(client, headers, f"work {marker}")
+        job_id = accepted.json()["job_id"]
+    await _drain(settings)
+    async with spec3_client(postgres_url) as (client, _app, _clock):
+        login = await client.post(
+            "/api/auth/login", json={"email": email, "password": "Str0ng-Passw0rd!"}
+        )
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        polled = await client.get(f"/api/jobs/{job_id}", headers=headers)
+    body = polled.json()
+    assert body["status"] == state
+    assert body["response"]["answer"]
+    assert 1 <= int(polled.headers["Retry-After"]) <= 60  # still a pending state

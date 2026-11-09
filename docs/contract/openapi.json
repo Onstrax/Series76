@@ -1527,7 +1527,7 @@
     },
     "/api/jobs/{job_id}": {
       "get": {
-        "description": "Poll a job owner-scoped; returns one state + envelope on COMPLETED.",
+        "description": "Poll a job owner-scoped; returns its state + the envelope once one exists.",
         "operationId": "poll_job_api_jobs__job_id__get",
         "parameters": [
           {
