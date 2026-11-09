@@ -1,0 +1,15 @@
+{
+ "label": "interpretation=google/gemini-2.5-flash-lite",
+ "varied": "INTERPRETATION",
+ "models": {
+  "INTERPRETATION": "google/gemini-2.5-flash-lite",
+  "TOOL_CALLING": "openai/gpt-oss-120b"
+ },
+ "spent_usd": "0.56",
+ "models_used": {
+  "INTERPRETATION": [
+   "google/gemini-2.5-flash-lite"
+  ]
+ },
+ "median_latency_s": 2.0
+}

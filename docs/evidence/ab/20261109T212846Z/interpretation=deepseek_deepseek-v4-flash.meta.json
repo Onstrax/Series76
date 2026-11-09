@@ -1,0 +1,18 @@
+{
+ "label": "interpretation=deepseek/deepseek-v4-flash",
+ "varied": "INTERPRETATION",
+ "models": {
+  "INTERPRETATION": "deepseek/deepseek-v4-flash",
+  "TOOL_CALLING": "openai/gpt-oss-120b"
+ },
+ "spent_usd": "0.0453014098",
+ "models_used": {
+  "INTERPRETATION": [
+   "deepseek/deepseek-v4-flash"
+  ],
+  "TOOL_CALLING": [
+   "openai/gpt-oss-120b"
+  ]
+ },
+ "median_latency_s": 9.649999999999999
+}
