@@ -96,7 +96,7 @@ class RefreshAuthenticator(private val refresher: TokenRefresher) : Authenticato
 }
 
 class RetrofitSpec3Api(
-    baseUrl: String,
+    private val baseUrl: String,
     tokens: TokenStore,
     onSessionClosed: suspend () -> Unit,
     baseClient: OkHttpClient = OkHttpClient(),

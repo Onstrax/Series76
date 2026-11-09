@@ -39,11 +39,15 @@ This section lists only what has been executed. Everything else is marked
   executed (no Android SDK in the authoring environment). See `android/README.md`.
 - **[EXPERIMENT] — live model evaluation.** It needs an `OPENROUTER_API_KEY`. No model or
   tool-set winner has been declared, because no paired A/B evidence exists.
-- **[EXPERIMENT] — Docker Compose cold start.** The owner ran `docker compose up --build`
-  from a clean clone of commit `6091f87`, before the catalog was audited: `migrate` exited 0
-  and `api`, `worker` and `db` were up. That run predates the audited edition, which
-  `migrate` now publishes, so it is not recorded as evidence. A rerun from the current
-  commit is still pending.
+- **Docker Compose cold start: executed.** The owner ran `docker compose up --build` from
+  a clean clone of `2d2b04e`. All six checks passed:
+  - `migrate` exited 0 and published the audited edition;
+  - `api`, `worker` and `db` came up;
+  - `/api/health` and `/api/ready` returned 200;
+  - the seed accounts were created.
+
+  The result is recorded as evidence (level 12). It ran with the fake agent runtime, so
+  no model was called.
 
 ## Setup
 
