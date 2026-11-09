@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.series76.assistant
 
 import com.series76.assistant.core.model.EnvelopeParser

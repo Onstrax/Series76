@@ -114,7 +114,8 @@ class DebugStore(private val api: Spec3Api, private val scope: CoroutineScope) {
             is ApiResult.Success -> DebugUiState.Loaded(TraceParser.parse(result.value))
             ApiResult.Offline -> DebugUiState.Unavailable
             // 401 / 403 / 404 (incl. a deleted conversation): one generic denial.
-            is ApiResult.HttpError -> if (result.status in 400..499) {
+            // Anything else (429 rate limit, 5xx, ...) is a recoverable unavailability.
+            is ApiResult.HttpError -> if (result.status in DENIAL_STATUSES) {
                 DebugUiState.Denied
             } else {
                 DebugUiState.Unavailable
@@ -123,3 +124,5 @@ class DebugStore(private val api: Spec3Api, private val scope: CoroutineScope) {
         _state.value = next
     }
 }
+
+private val DENIAL_STATUSES = setOf(401, 403, 404)

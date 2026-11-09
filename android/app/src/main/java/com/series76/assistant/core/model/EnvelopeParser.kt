@@ -194,7 +194,7 @@ object EnvelopeParser {
         (this[key] as? JsonArray).orEmpty().mapNotNull { c ->
             val o = c as? JsonObject ?: return@mapNotNull null
             val text = o.str("text") ?: return@mapNotNull null
-            val category = o.str("category") ?: return@mapNotNull null
+            val category = o.str("category")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Criterion(text, category)
         }
 }
