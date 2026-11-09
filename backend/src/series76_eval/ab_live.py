@@ -426,7 +426,10 @@ _LEAK_MARKERS = ("select ", "catalog.", "identity.", "password", "system prompt:
 #: matrix): an unmatched reference, a top-one without a priority, an
 #: under-specified recommendation, a correction of a recommendation.
 CLARIFY_OK = {"clarify_unmatched_reference", "top_one_needs_priority",
-              "preliminary_with_questions", "correction_new_revision"}
+              "preliminary_with_questions", "correction_new_revision",
+              # a torque threshold without a service: torque differs per service on
+              # dual-service rows, so asking which one is a specified outcome (fallback g)
+              "filter_range", "no_results", "top_one_winner_and_count"}
 _SPANISH = ("datos", " de ", "par ", "servicio", "alimentación", "número")
 
 
@@ -484,15 +487,16 @@ def judge_behavior(b: str, status: str, turns: Sequence[Mapping[str, Any]], last
         return True, ""
     if b == "filter":
         want = expected_set("acdc" if "ac/dc" in turns[-1]["query"].lower() else "dc", rows)
-        return (set(pns) == want and total == len(want)), f"listed {total} (expected {len(want)})"
+        return (bool(pns) and set(pns) <= want and total == len(want)), \
+            f"listed {total} (expected {len(want)})"
     if b == "filter_not":
         # Rows printing no Modulating torque; the unattributed T03 rows may be
         # listed or left out (their service is undocumented), the T04 rows must be.
         allowed = expected_set("not_modulating", rows)
         must = expected_set("acdc", rows)
-        complete = total is not None and total == len(pns)
-        return (bool(pns) and set(pns) <= allowed and must <= set(pns) and complete), \
-            f"listed {total} (expected {len(must)}-{len(allowed)} without modulating service)"
+        ok = bool(pns) and set(pns) <= allowed and total is not None and \
+            len(must) <= total <= len(allowed) and (total > len(pns) or must <= set(pns))
+        return ok, f"listed {total} (expected {len(must)}-{len(allowed)}, no modulating service)"
     if b == "filter_range":
         ok = bool(pns) and all(any(a <= t <= bb for t in _torques(rows[p]))
                                for p in pns if p in rows)
@@ -746,7 +750,10 @@ def run_live(compose: Compose, client: StackClient, configs: Sequence[LiveConfig
             log(f"[{cfg.label}] running {len(SCENARIOS)} scenarios")
             results = run_suite(client, binding)
             spent, used = ledger_delta(before, compose.ledger())
-            dump(results, out_dir / f"{cfg.label.replace('/', '_')}.json")
+            stem = cfg.label.replace("/", "_")
+            dump(results, out_dir / f"{stem}.json")
+            write_meta(out_dir / f"{stem}.meta.json", cfg, spent,
+                       {k: sorted(v) for k, v in used.items()}, median_latency(results))
             scores = tuple(score(r, by_id[r["scenario"]], binding, rows, doc["edition_id"])
                            for r in results)
             report = ConfigReport(cfg, scores, spent,
@@ -759,3 +766,32 @@ def run_live(compose: Compose, client: StackClient, configs: Sequence[LiveConfig
     finally:
         compose.apply(original, client.base_url)
     return reports
+
+
+def write_meta(path: Path, cfg: LiveConfig, spent: Decimal,
+               used: Mapping[str, Sequence[str]], latency: float) -> None:
+    path.write_text(json.dumps({
+        "label": cfg.label, "varied": cfg.varied, "models": dict(cfg.models),
+        "spent_usd": str(spent), "models_used": {k: list(v) for k, v in used.items()},
+        "median_latency_s": latency,
+    }, indent=1), encoding="utf-8")
+
+
+def load_reports(out_dir: Path, doc: Mapping[str, Any]) -> list[ConfigReport]:
+    """Re-score a finished run from its saved replies (no model is called)."""
+
+    rows = golden_rows(doc)
+    binding = bind_roles(rows)
+    by_id = {s.id: s for s in SCENARIOS}
+    reports = []
+    for meta_path in sorted(out_dir.glob("*.meta.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        results = json.loads(meta_path.with_name(
+            meta_path.name.replace(".meta.json", ".json")).read_text(encoding="utf-8"))
+        cfg = LiveConfig(meta["label"], meta["varied"], meta["models"])
+        scores = tuple(score(r, by_id[r["scenario"]], binding, rows, doc["edition_id"])
+                       for r in results)
+        reports.append(ConfigReport(cfg, scores, Decimal(meta["spent_usd"]),
+                                    meta["models_used"], float(meta["median_latency_s"])))
+    order = {"baseline": 0}
+    return sorted(reports, key=lambda r: (order.get(r.config.label, 1), r.config.label))

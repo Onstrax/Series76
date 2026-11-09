@@ -11,6 +11,7 @@ Commands (run from ``backend/``):
 * ``integrity`` — SHA-256 of the source PDF vs the handoff's trusted ``SHA256SUMS.txt``;
 * ``contract-snapshot [--write]`` — compare (or rewrite) ``docs/contract/openapi.json``;
 * ``ab-live <compose dir>`` — the paired A/B over a running stack;
+* ``ab-report <run dir>`` — re-score a finished A/B run and persist its evidence;
 * ``probe-models`` — verify configured models' capabilities on OpenRouter's public
   endpoint list and print ``MODEL_CAPABILITIES``;
 * ``live-eval`` — the cost-gated live level (refuses without a key and an
@@ -94,7 +95,6 @@ def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
 
     import datetime
     import json
-    import platform
     from decimal import Decimal
 
     from dotenv import dotenv_values
@@ -104,11 +104,9 @@ def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
     from series76_eval.ab_live import (
         Compose,
         StackClient,
-        choose,
         plan_configs,
         run_live,
     )
-    from series76_eval.evidence import EvidenceRecord, git_commit, now_iso, redact
 
     if not args:
         out("usage: ab-live <compose dir> [project]\n")
@@ -136,51 +134,84 @@ def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
     out_dir = REPO / "docs" / "evidence" / "ab" / stamp
     client = StackClient("http://localhost:8000", email, password)
-    reports = run_live(compose, client, configs, doc, out_dir, log=lambda m: out(m + "\n"))
+    run_live(compose, client, configs, doc, out_dir, log=lambda m: out(m + "\n"))
     total = sum((Decimal(str(e.get("cost_usd", "0"))) for e in compose.ledger()), Decimal(0))
+    (out_dir / "ledger_total_usd.txt").write_text(f"{total}\n", encoding="utf-8")
+    return _ab_report([str(out_dir)], out)
 
+
+def _ab_report(args: list[str], out: Callable[[str], object]) -> int:
+    """Score a finished ``ab-live`` run from its saved replies and persist evidence.
+
+    No model is called. One Evidence_Record per configuration: ``passed`` only
+    when every scenario succeeded (the store's invariant); the promotion gate
+    (zero numeric discrepancies, zero leaks) is ``no_critical_defects``.
+    """
+
+    import json
+    import platform
+    from decimal import Decimal
+
+    from series76_eval.ab_live import choose, load_reports
+    from series76_eval.evidence import EvidenceRecord, git_commit, now_iso, redact
+
+    if not args:
+        out("usage: ab-report <run dir>\n")
+        return 2
+    out_dir = Path(args[0]).resolve()
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    reports = load_reports(out_dir, doc)
+    if not reports:
+        out("no configuration results in that directory\n")
+        return 2
+    total = Decimal((out_dir / "ledger_total_usd.txt").read_text().strip())
     store = _store()
     commit = git_commit(BACKEND)
+    n = len(reports[0].scores)
     for r in reports:
         failures = [f"{s.scenario} ({s.behavior}): {'; '.join(s.notes) or 'behavior'}"
                     for s in r.scores if not s.success]
         store.persist(EvidenceRecord(
             claim_id=f"ab:{r.config.label}",
-            command=f"python -m series76_eval ab-live (config {r.config.label})",
+            command=f"python -m series76_eval ab-live (config {r.config.label}); "
+                    f"ab-report {out_dir.name}",
             date=now_iso(), commit=commit,
             environment=f"{platform.system()} {platform.release()} / Compose stack / OpenRouter",
-            result=Result.PASSED if r.gate_ok and r.config_applied else Result.FAILED,
+            result=Result.PASSED if r.successes == n else Result.FAILED,
             sanitized_log=redact("\n".join([
                 f"models: {dict(r.config.models)}; ledger models: {dict(r.models_used)}",
-                f"successes {r.successes}/{len(r.scores)}; numeric discrepancies "
+                f"successes {r.successes}/{n}; numeric discrepancies "
                 f"{r.numeric_discrepancies}; leaks {r.leaks}; spend USD {r.spent_usd}; "
                 f"median latency {r.median_latency_s}s",
-                *failures[:12],
+                *failures[:14],
             ])),
-            case_count=r.successes, denominator=len(r.scores),
-            no_critical_defects=r.gate_ok,
+            case_count=r.successes, denominator=n,
+            no_critical_defects=r.gate_ok and r.config_applied,
             known_limits="one run per configuration; deterministic envelope checks "
-                         "(fidelity, expected golden figures, observable behavior); "
-                         "set-valued filter results are not compared to an exact set",
+                         "(fidelity, expected golden figures, golden-derived result sets, "
+                         "observable behavior); failed calls are charged at the pre-call "
+                         "estimate",
             cumulative_cost_usd=total,
         ))
 
-    lines = [f"# Paired A/B — {stamp}", "",
-             f"Commit `{commit}`. Every configuration ran the {len(reports[0].scores)}-scenario "
-             "suite once through the real API. Spend is the stack ledger's own record.", "",
+    lines = [f"# Paired A/B — {out_dir.name}", "",
+             f"Scored at commit `{commit}`. Every configuration ran the {n}-scenario suite "
+             "once through the real API (one factor varied, the rest on the baseline model, "
+             "no fallback). Spend is the stack ledger's own record; failed calls are charged "
+             "at the pre-call estimate.", "",
              "| Configuration | Successes | Numeric discrepancies | Leaks | Config verified "
              "| Spend (USD) | Median latency (s) |", "|---|---|---|---|---|---|---|"]
     for r in reports:
-        lines.append(f"| {r.config.label} | {r.successes}/{len(r.scores)} | "
-                     f"{r.numeric_discrepancies} | {r.leaks} | {r.config_applied} | "
-                     f"{r.spent_usd:.6f} | {r.median_latency_s} |")
+        lines.append(f"| {r.config.label} | {r.successes}/{n} | {r.numeric_discrepancies} | "
+                     f"{r.leaks} | {r.config_applied} | {r.spent_usd:.6f} | "
+                     f"{r.median_latency_s} |")
     lines += ["", "## Selection per function", ""]
-    for fn in candidates:
+    for fn in ("INTERPRETATION", "TOOL_CALLING"):
         model, why = choose(fn, reports)
         lines.append(f"- **{fn}**: {model or 'no winner'} — {why}")
     lines += ["", "## Failed scenarios", ""]
     for r in reports:
-        bad = [f"{s.scenario}" for s in r.scores if not s.success]
+        bad = [s.scenario for s in r.scores if not s.success]
         lines.append(f"- {r.config.label}: {', '.join(bad) or 'none'}")
     lines += ["", f"Cumulative ledger after the run: USD {total}."]
     (out_dir / "SUMMARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -349,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if cmd == "ab-live":
         return _ab_live(args[1:], out)
+
+    if cmd == "ab-report":
+        return _ab_report(args[1:], out)
 
     if cmd == "probe-models":
         return _probe_models(out)
