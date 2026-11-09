@@ -37,8 +37,12 @@ This section lists only what has been executed. Everything else is marked
   the result is in the evidence store.
 - **[EXPERIMENT] — Android.** No Gradle build, JVM test run or emulator run has been
   executed (no Android SDK in the authoring environment). See `android/README.md`.
-- **[EXPERIMENT] — live model evaluation.** It needs an `OPENROUTER_API_KEY`. No model or
-  tool-set winner has been declared, because no paired A/B evidence exists.
+- **[EXPERIMENT] — live model evaluation.** One live canary turn has been executed through
+  the Compose stack with `openai/gpt-oss-120b` for every function. Every figure in the
+  answer was checked against the PDF, and the turn cost USD 0.0018 cumulative per the
+  ledger (evidence `canary:openai/gpt-oss-120b`). The paired A/B comparison between
+  `gpt-oss-120b`, `deepseek-v4-flash` and `gemini-2.5-flash-lite` has not run yet, so no
+  model or tool-set winner has been declared.
 - **Docker Compose cold start: executed.** The owner ran `docker compose up --build` from
   a clean clone of `2d2b04e`. All six checks passed:
   - `migrate` exited 0 and published the audited edition;
