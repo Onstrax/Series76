@@ -64,6 +64,9 @@ def classify_provider_error(exc: BaseException) -> BaseException:
     if isinstance(exc, openai.APIStatusError):
         if exc.status_code == 402:
             return QuotaSignal("quota")
+        if exc.status_code in (401, 403):
+            # Invalid / expired key: a provider configuration failure, never retried.
+            return ProviderUnavailableError(f"provider rejected the key ({exc.status_code})")
         if exc.status_code in (408, 409, 425, 429) or exc.status_code >= 500:
             return TransientError(f"status {exc.status_code}")
         return exc

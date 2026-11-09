@@ -188,7 +188,8 @@ class ResponseComposer:
         lang = ctx.lang
         if bf.figure.has_number:
             value = bf.value_text or ""
-            text = f"{value} {bf.unit}" if bf.unit else value
+            # "count" is the unit of cycles/starts per hour: the label already says it.
+            text = f"{value} {bf.unit}" if bf.unit and bf.unit != "count" else value
         else:
             text = STATUS_LABELS[bf.status][lang]
         if bf.figure.derived is not None:
@@ -431,7 +432,12 @@ class ResponseComposer:
             lines, scope_missing, any_na, all_torque_na = self._lookup_lines(
                 ctx, pn, draft.service, frequency
             )
-            segs.extend(join(lines, "; "))
+            # One value per line: the answer is read on a phone, next to the card.
+            for line in lines:
+                segs.append(Lit("\n• "))
+                segs.extend(line)
+            if lines:
+                segs.append(Lit("\n"))
             if len(lines) > 1:
                 segs.extend(parse_template(msg("multi_measure", ctx.lang), {}))
             if scope_missing is not None:
@@ -452,7 +458,7 @@ class ResponseComposer:
                     )
             if all_torque_na:
                 outcome = OutcomeCode.N_A
-            segs.append(Lit(" "))
+            segs.append(Lit("\n\n" if len(found) > 1 else " "))
             blocks.append(self.product_card(ctx, pn))
         for pn in not_listed:
             segs.extend(

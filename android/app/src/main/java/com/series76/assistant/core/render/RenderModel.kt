@@ -198,7 +198,7 @@ object RenderMapper {
         val value: UiText = when {
             !valid -> UiText.Res("state_unavailable")
             figure.availability == Availability.AVAILABLE ->
-                UiText.Raw(listOfNotNull(figure.value, figure.unit).joinToString(" "))
+                UiText.Raw(listOfNotNull(figure.value, figure.unit?.takeIf { it != "count" }).joinToString(" "))
             figure.availability == Availability.NOT_APPLICABLE -> UiText.Res("state_not_applicable")
             figure.availability == Availability.NOT_DOCUMENTED -> UiText.Res("state_not_documented")
             figure.availability == Availability.NOT_LISTED -> UiText.Res("state_not_listed")

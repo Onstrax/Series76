@@ -36,6 +36,7 @@ from series76_api.infrastructure.settings import Settings
 #: Job states whose persisted Response_Envelope is returned when polled.
 _ENVELOPE_STATES = frozenset({
     JobState.COMPLETED,
+    JobState.FAILED,  # the explained failure reply, when one was stored
     JobState.NEEDS_CLARIFICATION,
     JobState.AWAITING_CONFIRMATION,
     JobState.STALE_PLAN,

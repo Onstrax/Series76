@@ -290,3 +290,32 @@ async def test_poll_returns_the_clarification_or_plan_the_user_must_answer(
     assert body["status"] == state
     assert body["response"]["answer"]
     assert 1 <= int(polled.headers["Retry-After"]) <= 60  # still a pending state
+
+
+async def test_a_failed_turn_explains_itself_and_stays_in_history(
+    postgres_url: str, migrated_db_module: Config
+) -> None:
+    """Provider down: FAILED with a user-safe reply (reference, retry), kept in history."""
+
+    settings = build_settings(postgres_url)
+    async with spec3_client(postgres_url) as (client, _app, _clock):
+        email, headers = await register_and_login(client)
+        accepted = await _enqueue(client, headers, "dame los datos [upstream_down]")
+        job_id, session_id = accepted.json()["job_id"], accepted.json()["session_id"]
+    await _drain(settings)
+    async with spec3_client(postgres_url) as (client, _app, _clock):
+        login = await client.post(
+            "/api/auth/login", json={"email": email, "password": "Str0ng-Passw0rd!"}
+        )
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        body = (await client.get(f"/api/jobs/{job_id}", headers=headers)).json()
+        history = (await client.get(f"/api/sessions/{session_id}/messages",
+                                    headers=headers)).json()
+        sessions = (await client.get("/api/sessions", headers=headers)).json()
+    assert body["status"] == "FAILED"
+    answer = body["response"]["answer"]
+    assert job_id.replace("-", "")[:8] in answer and "inténtelo de nuevo" in answer
+    assert not any(ch.isdigit() for ch in answer.replace(job_id.replace("-", "")[:8], ""))
+    texts = str(history)
+    assert "dame los datos" in texts and "inténtelo de nuevo" in texts
+    assert session_id in str(sessions)

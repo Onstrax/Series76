@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import traceback
 import uuid
 from dataclasses import dataclass
@@ -153,8 +154,8 @@ class WorkerService:
                 )
             )
         except (ProviderUnavailable, DomainError):
-            # Provider failure / fail-closed turn: FAILED without a result.
-            await self._fail_phase(claimed)
+            # Provider failure / fail-closed turn: FAILED, with an explained reply.
+            await self._fail_with_notice(claimed)
             return claimed.job_id
         except Exception as exc:  # noqa: BLE001 - an unexpected defect must not strand the job
             # Fail closed instead of leaving the job RUNNING until its lease
@@ -167,7 +168,7 @@ class WorkerService:
             )
             _log.error("turn job %s failed unexpectedly: %s at %s",
                        claimed.job_id, type(exc).__name__, where)
-            await self._fail_phase(claimed)
+            await self._fail_with_notice(claimed)
             return claimed.job_id
 
         state = _JOB_STATE_BY_OUTCOME.get(outcome.outcome_kind, JobState.COMPLETED)
@@ -385,6 +386,32 @@ class WorkerService:
             blocks_ciphertext=records.assistant_blocks_ct,
         )
 
+    async def _fail_with_notice(self, claimed: _ClaimedJob) -> None:
+        """End the job FAILED with a user-safe reply and keep the turn in history.
+
+        The reply names a short reference and invites a retry (Spec 4 fallback
+        j/k); it carries no technical detail and no figure. If the reply cannot
+        be stored, the job still ends FAILED (without a reply).
+        """
+
+        try:
+            answer = failure_notice(claimed.query, str(claimed.job_id))
+            outcome = TurnOutcome(answer=answer, outcome_kind=OutcomeKind.UPSTREAM_UNAVAILABLE)
+            assistant_id = uuid.uuid4()
+            envelope = build_response_envelope(
+                claimed.session_id, outcome, turn_id=str(assistant_id),
+                message_id=str(assistant_id),
+            )
+            result_ct = await self._encrypt_result(claimed, envelope)
+            if result_ct is not None:
+                records = await self._history_records(claimed, envelope, assistant_id, outcome)
+                await self._persist_phase(claimed, result_ct=result_ct, state=JobState.FAILED,
+                                          records=records)
+                return
+        except Exception:  # noqa: BLE001 - the bare failure below still ends the job
+            _log.error("turn job %s: could not store the failure reply", claimed.job_id)
+        await self._fail_phase(claimed)
+
     async def _fail_phase(self, claimed: _ClaimedJob) -> None:
         async with self._session_factory() as session:
             uow = UnitOfWork(session)
@@ -415,3 +442,20 @@ _JOB_STATE_BY_OUTCOME: dict[OutcomeKind, JobState] = {
 
 
 __all__ = ["WorkerService"]
+
+
+_SPANISH_HINT = re.compile(
+    r"[áéíóúñ¿¡]|\b(de|el|la|los|las|qué|que|cuál|dame|muestra|muéstrame|partes|corriente|par)\b",
+    re.IGNORECASE,
+)
+
+
+def failure_notice(query: str, job_id: str) -> str:
+    """The user-safe reply of a turn that could not be answered (no figures)."""
+
+    ref = job_id.replace("-", "")[:8]
+    if _SPANISH_HINT.search(query):
+        return (f"El asistente no pudo responder este mensaje en este momento (referencia {ref}). "
+                "Su mensaje quedó guardado; inténtelo de nuevo en un momento.")
+    return (f"The assistant could not answer this message right now (reference {ref}). "
+            "Your message was saved; please try again in a moment.")

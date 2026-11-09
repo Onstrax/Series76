@@ -21,7 +21,9 @@ class AndroidConnectivityMonitor(context: Context) : ConnectivityMonitor {
     init {
         manager.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { state.value = true }
-            override fun onLost(network: Network) { state.value = hasInternet() }
+            // The lost default network may still be reported as active for a moment:
+            // never re-query it here. A replacement network arrives via onAvailable.
+            override fun onLost(network: Network) { state.value = false }
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
                 state.value = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             }
