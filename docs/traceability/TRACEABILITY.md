@@ -5,7 +5,7 @@ every requirement and the `Requirements:` lines of every task. `verified` needs 
 persisted Evidence_Record; `pending` = mapped but not yet evidenced; `gap` = no
 implementing spec/task.
 
-Totals: 0 verified, 107 pending, 2 gap (of 109).
+Totals: 0 verified, 109 pending, 0 gap (of 109).
 
 | Item | Specs | Tasks | Evidence | Status |
 |---|---|---|---|---|
@@ -71,8 +71,8 @@ Totals: 0 verified, 107 pending, 2 gap (of 109).
 | F3-AT07 | backend-api-auth-jobs-crypto | backend-api-auth-jobs-crypto#10.1, backend-api-auth-jobs-crypto#10.2, backend-api-auth-jobs-crypto#9.1, backend-api-auth-jobs-crypto#9.2 | — | pending |
 | F3-AT08 | backend-api-auth-jobs-crypto | backend-api-auth-jobs-crypto#13.1, backend-api-auth-jobs-crypto#13.2, backend-api-auth-jobs-crypto#8.1, backend-api-auth-jobs-crypto#8.2, backend-api-auth-jobs-crypto#8.3 | — | pending |
 | F3-AT09 | backend-api-auth-jobs-crypto | backend-api-auth-jobs-crypto#13.1, backend-api-auth-jobs-crypto#13.2, backend-api-auth-jobs-crypto#14.1, backend-api-auth-jobs-crypto#14.2, backend-api-auth-jobs-crypto#3.1, backend-api-auth-jobs-crypto#3.2, backend-api-auth-jobs-crypto#3.3, backend-api-auth-jobs-crypto#3.4 … | — | pending |
-| F3-AT10 | — | — | — | gap |
-| F3-AT11 | — | — | — | gap |
+| F3-AT10 | android-app | android-app#17.1, android-app#4.1, android-app#4.2, android-app#6.1, android-app#6.2, android-app#7.1, android-app#7.2, android-app#8.1 | — | pending |
+| F3-AT11 | agent-orchestration-response | agent-orchestration-response#12.1, agent-orchestration-response#12.2 | — | pending |
 | F3-AT12 | backend-api-auth-jobs-crypto | backend-api-auth-jobs-crypto#1.2, backend-api-auth-jobs-crypto#17.1, backend-api-auth-jobs-crypto#17.2, backend-api-auth-jobs-crypto#17.3, backend-api-auth-jobs-crypto#2.1, backend-api-auth-jobs-crypto#2.2 | — | pending |
 | F4-AT01 | android-app, evaluation-and-reproducibility | android-app#17.1, android-app#4.1, android-app#6.1, android-app#6.2, android-app#7.2, evaluation-and-reproducibility#8.1, evaluation-and-reproducibility#8.2, evaluation-and-reproducibility#8.3 | — | pending |
 | F4-AT02 | android-app, evaluation-and-reproducibility | android-app#17.1, android-app#4.1, android-app#6.1, android-app#6.2, android-app#7.2, evaluation-and-reproducibility#8.1, evaluation-and-reproducibility#8.2, evaluation-and-reproducibility#8.3 | — | pending |

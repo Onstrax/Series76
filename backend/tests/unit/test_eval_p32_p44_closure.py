@@ -221,23 +221,11 @@ def test_property_42_every_obligation_mapped(mapping, tmp_path_factory) -> None:
             assert set(row.specs) == specs and row.tasks
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Real documentation gap: F3-AT10 and F3-AT11 appear only in the Spec 3 summary table and "
-        "in no requirement Traces line of any spec; resolving it needs a spec edit (owner decision)."
-    ),
-)
 def test_property_42_real_specs_have_no_gap() -> None:
+    # F3-AT10/F3-AT11 were traced into Spec 5 Req 9 and Spec 4 Req 10 (owner decision D1).
     artifact = build_artifact(REPO / ".kiro" / "specs")
     assert len(artifact.rows) == len(obligations()) == 109
     assert [r.item_id for r in artifact.by_status(Status.GAP)] == []
-
-
-def test_property_42_real_specs_known_gaps_only() -> None:
-    artifact = build_artifact(REPO / ".kiro" / "specs")
-    assert len(artifact.rows) == 109
-    assert sorted(r.item_id for r in artifact.by_status(Status.GAP)) == ["F3-AT10", "F3-AT11"]
 
 
 # Feature: evaluation-and-reproducibility, Property 43: Mapped items are pending or gap, never both

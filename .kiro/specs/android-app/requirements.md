@@ -205,7 +205,7 @@ When sources conflict, the following precedence governs this spec:
 
 ### Requirement 9: Local Cache and Session Security
 
-**User Story:** As a user, I want my cached data isolated per account, encrypted locally, hidden after logout, and purged on account switch, so that a stolen device dump or a late response never leaks my conversations to another account. *(Traces: US-028, US-033, AT-11, AT-16, F4-AT04, F4-AT16. Classes: [APPROVED])*
+**User Story:** As a user, I want my cached data isolated per account, encrypted locally, hidden after logout, and purged on account switch, so that a stolen device dump or a late response never leaks my conversations to another account. *(Traces: US-028, US-033, AT-11, AT-16, F4-AT04, F4-AT16, F3-AT10. Classes: [APPROVED])*
 
 #### Acceptance Criteria
 

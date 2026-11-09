@@ -299,10 +299,14 @@ Current state, honestly:
 
 - **The catalog is empty until the manual audit is done**, so lookups return
   "no matching part numbers" ([EXPERIMENT], above).
-- **The traceability matrix has two real documentation gaps:** `F3-AT10` (Android
-  cross-token) and `F3-AT11` (catalog failure). They appear in the Spec 3 summary table but
-  in no requirement `Traces:` line of any spec. Closing them needs a spec edit, which is the
-  owner's decision. A strict `xfail` test records the gap.
+- **Traceability:** `F3-AT10` (Android cross-token) and `F3-AT11` (catalog failure) were
+  listed only in the Spec 3 summary table. By owner decision they are now traced by Spec 5
+  Requirement 9 and Spec 4 Requirement 10, whose behaviour already covered them; the matrix
+  has no gaps (a test enforces it).
+- **`fresh_extraction` (Gemini) is not delivered.** It stays a stub that only checks for
+  `GEMINI_API_KEY`; by owner decision (time) the delivered and default path is
+  `verified_replay`, which makes no model call. Spec 6 Requirement 6.11 (one documented fresh
+  extraction run) is therefore unmet.
 - **Android code, build and tests are unexecuted** [EXPERIMENT].
 - **Live model evaluation and cost measurements have not been run**, and no model has been
   selected [EXPERIMENT].

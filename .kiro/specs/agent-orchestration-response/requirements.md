@@ -228,7 +228,7 @@ When sources conflict, the following precedence governs this spec:
 
 ### Requirement 10: Abstention, Out-of-Scope, and the Fallback Matrix
 
-**User Story:** As a user, I want clear abstention when a question falls outside the provided documents and predictable handling of every failure condition, so that the assistant never invents external facts and never mishandles an error as a different kind of error. *(Traces: US-023, US-025, QA-10, F2 §10, F2 §8. Classes: [ASSESS])*
+**User Story:** As a user, I want clear abstention when a question falls outside the provided documents and predictable handling of every failure condition, so that the assistant never invents external facts and never mishandles an error as a different kind of error. *(Traces: US-023, US-025, QA-10, F2 §10, F2 §8, F3-AT11. Classes: [ASSESS])*
 
 #### Acceptance Criteria
 
