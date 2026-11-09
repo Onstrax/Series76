@@ -228,3 +228,55 @@ def test_no_winner_declared_anywhere() -> None:
     )
     for path in SRC.rglob("*.py"):
         assert not pattern.search(path.read_text(encoding="utf-8")), path
+
+
+def _endpoints(*eps: tuple[str, list[str]]) -> dict[str, object]:
+    return {"data": {"endpoints": [{"tag": t, "supported_parameters": p} for t, p in eps]}}
+
+
+def test_pinned_providers_verify_only_their_endpoints_and_route_with_only() -> None:
+    from series76_agent.models import parse_openrouter_endpoints, request_options
+
+    payload = _endpoints(
+        ("deepinfra/bf16", ["tools", "structured_outputs"]),
+        ("groq", ["tools", "response_format"]),
+        ("venice/int4", ["tools"]),  # no structured output
+        ("amazon-bedrock", []),  # neither
+    )
+    both = {Capability.TOOLS, Capability.STRUCTURED_OUTPUT}
+    assert parse_openrouter_endpoints(payload) == frozenset()  # unpinned: every endpoint counts
+    assert parse_openrouter_endpoints(payload, ("deepinfra/bf16", "groq")) == both
+    assert parse_openrouter_endpoints(payload, ("deepinfra",)) == both  # slug matches its tags
+    assert parse_openrouter_endpoints(payload, ("groq", "venice")) == {Capability.TOOLS}
+    assert parse_openrouter_endpoints(payload, ("nowhere",)) == frozenset()  # fail closed
+
+    body = request_options(frozenset(both), data_collection="deny", providers=("groq",))
+    assert body["provider"] == {"require_parameters": True, "allow_fallbacks": True,
+                                "data_collection": "deny", "only": ["groq"]}
+    assert "only" not in request_options(frozenset(both), data_collection="deny")["provider"]
+
+
+def test_model_providers_env_is_validated_and_reaches_the_request_spec() -> None:
+    env = {"AGENT_MODEL": "m/a", "MODEL_PROVIDERS": '{"m/a": ["groq", "deepinfra/bf16"]}'}
+    config = ModelConfig.from_env(env)
+    assert config.providers_for("m/a") == ("groq", "deepinfra/bf16")
+    assert config.providers_for("m/other") == ()
+    for bad in ('["groq"]', '{"m/a": []}', '{"m/a": "groq"}'):
+        with pytest.raises(ModelConfigError):
+            ModelConfig.from_env({**env, "MODEL_PROVIDERS": bad})
+
+    registry = CapabilityRegistry({"m/a": frozenset({Capability.TOOLS})})
+    gateway = ModelGateway(config, registry, CostLedger())
+    seen: list[object] = []
+
+    async def invoke(spec: object) -> tuple[str, object]:
+        from series76_agent.models import Usage
+
+        seen.append(spec)
+        return "ok", Usage(cost_usd=Decimal("0"))
+
+    budget = BudgetTracker(TurnBudget())
+    asyncio.run(gateway.call(ModelFunction.TOOL_CALLING, budget, invoke))
+    (spec,) = seen
+    assert spec.providers == ("groq", "deepinfra/bf16")  # type: ignore[attr-defined]
+    assert spec.extra_body["provider"]["only"] == ["groq", "deepinfra/bf16"]  # type: ignore[attr-defined,index]

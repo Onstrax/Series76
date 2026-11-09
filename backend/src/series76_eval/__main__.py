@@ -10,6 +10,8 @@ Commands (run from ``backend/``):
 * ``repro-check`` / ``config-check`` — static delivery and ``.kiro/`` checks;
 * ``integrity`` — SHA-256 of the source PDF vs the handoff's trusted ``SHA256SUMS.txt``;
 * ``contract-snapshot [--write]`` — compare (or rewrite) ``docs/contract/openapi.json``;
+* ``probe-models`` — verify configured models' capabilities on OpenRouter's public
+  endpoint list and print ``MODEL_CAPABILITIES``;
 * ``live-eval`` — the cost-gated live level (refuses without a key and an
   audited golden dataset); ``status`` — summary of evidence and pending items.
 """
@@ -79,6 +81,56 @@ def _documental_verify(out: Callable[[str], object]) -> int:
     for m in report.mismatches[:50]:
         out(f"  - {m.cell}: expected {m.expected!r}, observed {m.observed!r}\n")
     return 0 if report.passed else 1
+
+
+def _probe_models(out: Callable[[str], object]) -> int:
+    """Verify every configured model's capabilities on OpenRouter's public endpoint list.
+
+    Reads the models of ``AGENT_MODEL``/``INTERPRETER_MODEL``/``ANSWER_MODEL``/
+    ``FALLBACK_MODEL`` and their ``*_CANDIDATES``, restricted to the endpoints
+    pinned in ``MODEL_PROVIDERS``, and prints the ``MODEL_CAPABILITIES`` line to
+    put in ``.env``. The endpoint list is public: no key is sent, nothing is spent.
+    """
+
+    import json
+
+    import httpx
+
+    from series76_agent.models import (
+        _split,
+        endpoint_matches,
+        parse_model_providers,
+        parse_openrouter_endpoints,
+    )
+
+    env = os.environ
+    base = env.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    providers = parse_model_providers(env.get("MODEL_PROVIDERS"))
+    models: list[str] = []
+    for key in ("AGENT_MODEL", "INTERPRETER_MODEL", "ANSWER_MODEL", "FALLBACK_MODEL"):
+        models += [*_split(env.get(key)), *_split(env.get(f"{key}_CANDIDATES"))]
+    models = list(dict.fromkeys(models))
+    if not models:
+        out("no model configured (AGENT_MODEL, *_CANDIDATES)\n")
+        return 2
+    verified: dict[str, list[str]] = {}
+    for model in models:
+        reply = httpx.get(f"{base}/models/{model}/endpoints", timeout=30)
+        if reply.status_code != 200:
+            out(f"{model}: endpoint list unavailable (HTTP {reply.status_code})\n")
+            continue
+        payload = reply.json()
+        pinned = providers.get(model, ())
+        endpoints = payload.get("data", {}).get("endpoints", [])
+        counted = [e for e in endpoints if not pinned or endpoint_matches(e, pinned)]
+        caps = sorted(c.value for c in parse_openrouter_endpoints(payload, pinned))
+        out(f"{model}: {len(counted)}/{len(endpoints)} endpoints counted"
+            f"{' (pinned: ' + ', '.join(pinned) + ')' if pinned else ''}; verified: "
+            f"{', '.join(caps) or 'none'}\n")
+        if caps:
+            verified[model] = caps
+    out("MODEL_CAPABILITIES=" + json.dumps(verified, separators=(",", ":")) + "\n")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         out("prerequisites present: run the staged evaluation (offline -> canary -> paired A/B).\n")
         return 0
+
+    if cmd == "probe-models":
+        return _probe_models(out)
 
     if cmd == "cold-start-checklist":
         out(

@@ -226,6 +226,14 @@ AGENT_TOOL_SET=B               # A = coarse tools, B = fine-grained (see ADR 000
 
 ## Budget
 
+Model capabilities are verified, never assumed. `python -m series76_eval probe-models`
+reads OpenRouter's public endpoint list for every configured model (no key, no spend) and
+prints the `MODEL_CAPABILITIES` line. A capability counts only if **every** endpoint the
+model can be routed to supports it. `MODEL_PROVIDERS` can pin a model to exact providers
+(`provider.only`), and then only those endpoints count. For example, `openai/gpt-oss-120b`
+has providers without tool support, so it is pinned to providers that support both tools
+and structured output.
+
 There is one **cumulative** cost ledger across every model and function, with three limits:
 
 - **USD 10.00** hard cap;

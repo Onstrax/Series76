@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Generic, TypeVar
@@ -70,6 +70,28 @@ def _split(raw: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(x.strip() for x in raw.split(",") if x.strip()))
 
 
+def parse_model_providers(raw: str | None) -> dict[str, tuple[str, ...]]:
+    """Parse ``MODEL_PROVIDERS`` = JSON ``{"model": ["provider/tag", ...]}``.
+
+    A model listed here is only ever routed to those exact OpenRouter endpoints
+    (``provider.only``), and its capabilities are verified on them alone.
+    """
+
+    if not raw or not raw.strip():
+        return {}
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ModelConfigError("MODEL_PROVIDERS must be a JSON object")
+    out: dict[str, tuple[str, ...]] = {}
+    for model, providers in parsed.items():
+        if not isinstance(providers, list) or not providers or not all(
+            isinstance(x, str) and x.strip() for x in providers
+        ):
+            raise ModelConfigError("MODEL_PROVIDERS values must be non-empty lists of strings")
+        out[str(model)] = tuple(dict.fromkeys(x.strip() for x in providers))
+    return out
+
+
 @dataclass(frozen=True, slots=True)
 class ModelConfig:
     """Environment-configured model assignment per function (Req 11.1, 11.2)."""
@@ -83,6 +105,7 @@ class ModelConfig:
     data_collection: str = "deny"
     spend_category: SpendCategory = SpendCategory.DEV_EVAL
     call_estimate_usd: Decimal = Decimal("0.01")
+    providers: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> ModelConfig:
@@ -108,6 +131,7 @@ class ModelConfig:
         if privacy not in ("deny", "allow"):
             raise ModelConfigError("OPENROUTER_DATA_COLLECTION must be 'deny' or 'allow'")
         return cls(
+            providers=parse_model_providers(source.get("MODEL_PROVIDERS")),
             agent_model=agent,
             interpreter_model=interpreter,
             answer_model=answer,
@@ -118,6 +142,10 @@ class ModelConfig:
             spend_category=category,
             call_estimate_usd=estimate,
         )
+
+    def providers_for(self, model: str) -> tuple[str, ...]:
+        """The pinned OpenRouter providers of ``model`` (empty = router's choice)."""
+        return tuple(self.providers.get(model, ()))
 
     def model_for(self, function: ModelFunction) -> str | None:
         """The single active model of a function (one call per function per turn)."""
@@ -173,18 +201,33 @@ class CapabilityRegistry:
         return {Capability.TOOLS, Capability.STRUCTURED_OUTPUT} <= known
 
 
-def parse_openrouter_endpoints(payload: Mapping[str, object]) -> frozenset[Capability]:
-    """Capabilities supported by **every** listed endpoint of a model.
+def endpoint_matches(endpoint: Mapping[str, object], providers: Sequence[str]) -> bool:
+    """Whether an endpoint is one of the pinned ``providers`` (slug or exact tag)."""
+
+    tag = str(endpoint.get("tag") or "").lower()
+    wanted = {p.lower() for p in providers}
+    return tag in wanted or tag.split("/", 1)[0] in wanted
+
+
+def parse_openrouter_endpoints(
+    payload: Mapping[str, object], providers: Sequence[str] = ()
+) -> frozenset[Capability]:
+    """Capabilities supported by **every** endpoint the model may be routed to.
 
     ``payload`` is the JSON of OpenRouter's ``/models/{id}/endpoints`` reply.
-    Only features every endpoint supports are reported, so a provider fallback
-    under ``require_parameters`` can never silently lose a capability.
+    With ``providers`` (the model's pinned ``provider.only`` list) only those
+    endpoints count; otherwise every listed endpoint does. Only features every
+    counted endpoint supports are reported, so a provider fallback under
+    ``require_parameters`` can never silently lose a capability. No matching
+    endpoint means no verified capability (fail closed).
     """
 
     data = payload.get("data")
     endpoints = data.get("endpoints", []) if isinstance(data, Mapping) else []
     common: set[Capability] | None = None
     for endpoint in endpoints if isinstance(endpoints, list) else []:
+        if providers and not endpoint_matches(endpoint, providers):
+            continue
         params = set(endpoint.get("supported_parameters", []) or [])
         caps = set()
         if "tools" in params:
@@ -212,7 +255,9 @@ def resolve_phase_strategy(
     return "SEPARATED"
 
 
-def request_options(required: frozenset[Capability], *, data_collection: str) -> dict[str, object]:
+def request_options(
+    required: frozenset[Capability], *, data_collection: str, providers: Sequence[str] = ()
+) -> dict[str, object]:
     """OpenRouter ``extra_body`` for a request.
 
     ``require_parameters`` is ``True`` whenever a feature is required, so the
@@ -221,14 +266,14 @@ def request_options(required: frozenset[Capability], *, data_collection: str) ->
     requirement fixed across provider fallbacks; usage accounting is included.
     """
 
-    return {
-        "provider": {
-            "require_parameters": bool(required),
-            "allow_fallbacks": True,
-            "data_collection": data_collection,
-        },
-        "usage": {"include": True},
+    provider: dict[str, object] = {
+        "require_parameters": bool(required),
+        "allow_fallbacks": True,
+        "data_collection": data_collection,
     }
+    if providers:
+        provider["only"] = list(providers)  # fallbacks stay within the verified endpoints
+    return {"provider": provider, "usage": {"include": True}}
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,15 +283,21 @@ class RequestSpec:
     model: str
     required: frozenset[Capability]
     data_collection: str
+    providers: tuple[str, ...] = ()
 
     @property
     def extra_body(self) -> dict[str, object]:
         """The OpenRouter ``extra_body`` this spec implies."""
-        return request_options(self.required, data_collection=self.data_collection)
+        return request_options(
+            self.required, data_collection=self.data_collection, providers=self.providers
+        )
 
 
 def select_fallback(
-    primary: RequestSpec, fallback_model: str | None, registry: CapabilityRegistry
+    primary: RequestSpec,
+    fallback_model: str | None,
+    registry: CapabilityRegistry,
+    providers: tuple[str, ...] = (),
 ) -> RequestSpec:
     """Return a fallback spec preserving capabilities + privacy, or abort."""
 
@@ -257,7 +308,10 @@ def select_fallback(
     except UnsupportedCapability as exc:
         raise FallbackAborted("fallback cannot meet the required capabilities") from exc
     return RequestSpec(
-        model=fallback_model, required=primary.required, data_collection=primary.data_collection
+        model=fallback_model,
+        required=primary.required,
+        data_collection=primary.data_collection,
+        providers=providers,
     )
 
 
@@ -334,6 +388,7 @@ class ModelGateway:
             model=model,
             required=REQUIRED_CAPABILITIES[function],
             data_collection=self._config.data_collection,
+            providers=self._config.providers_for(model),
         )
         try:
             return await self._attempt(function, budget, primary, invoke)
@@ -341,7 +396,12 @@ class ModelGateway:
             if self._config.fallback_model is None:
                 raise
             try:
-                fallback = select_fallback(primary, self._config.fallback_model, self._registry)
+                fallback = select_fallback(
+                    primary,
+                    self._config.fallback_model,
+                    self._registry,
+                    self._config.providers_for(self._config.fallback_model),
+                )
             except FallbackAborted as exc:
                 raise ProviderUnavailableError("provider unavailable; fallback aborted") from exc
             return await self._attempt(function, budget, fallback, invoke)
