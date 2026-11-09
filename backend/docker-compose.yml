@@ -1,0 +1,65 @@
+# Series 76 backend — db / api / worker, api and worker from ONE image (Req 1.4, 12.1).
+# No secret is baked into the image; all config is injected from the environment
+# (env_file: .env). The `migrate` service runs Alembic to head and MUST complete
+# successfully before `api`/`worker` serve (Req 12.2): a failed migration stops
+# serving because api/worker depend on it with condition: service_completed_successfully.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: series76
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-series76}
+      POSTGRES_DB: series76
+    volumes:
+      - series76_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U series76 -d series76"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: series76-backend:latest
+    env_file:
+      - .env
+    environment:
+      # Migrations run with a privileged URL; the app connects as app_writer.
+      SERIES76_MIGRATE_URL: ${SERIES76_MIGRATE_URL:-postgresql+psycopg://series76:series76@db:5432/series76}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: series76-backend:latest
+    env_file:
+      - .env
+    command:
+      - uvicorn
+      - series76_api.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: series76-backend:latest
+    env_file:
+      - .env
+    command: ["python", "-m", "series76_api.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  series76_pgdata:

@@ -1,0 +1,108 @@
+"""Developer-account seed CLI (Spec 3, Req 2.10, 12.4).
+
+Provisions ``developer`` (and optionally ``user``) accounts out-of-band. This
+is the ONLY path that can create a ``developer``: no public HTTP endpoint can
+create or elevate one (the register use case hard-codes role ``user`` and the
+register DTO drops any client-supplied role). Demo credentials come from the
+environment, never from committed source.
+
+Run with::
+
+    python -m series76_api.seed --email dev@example.com --role developer
+
+If ``--password`` is omitted the value is read from ``SEED_PASSWORD`` in the
+environment so credentials are never passed on the command line in CI.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import uuid
+
+from sqlalchemy import select
+
+from series76_api.domain.auth import validate_email, validate_password
+from series76_api.domain.models import UserRole
+from series76_api.infrastructure.engine import create_app_engine, create_session_factory
+from series76_api.infrastructure.orm import UserORM
+from series76_api.infrastructure.security import hash_password
+from series76_api.infrastructure.settings import get_settings
+
+
+async def seed_account(
+    database_url: str, *, email: str, password: str, role: UserRole
+) -> uuid.UUID:
+    """Create (or no-op if present) an account with the given role.
+
+    Returns the account id. Idempotent on email: if the canonical email already
+    exists, the existing id is returned and no duplicate is created.
+    """
+
+    canonical = validate_email(email)
+    validate_password(password)
+
+    engine = create_app_engine(database_url)
+    factory = create_session_factory(engine)
+    try:
+        async with factory() as session:
+            existing = (
+                await session.execute(select(UserORM).where(UserORM.email == canonical))
+            ).scalar_one_or_none()
+            if existing is not None:
+                return existing.id
+            user = UserORM(
+                id=uuid.uuid4(),
+                email=canonical,
+                password_verifier=hash_password(password),
+                role=role,
+                email_verified=True,
+            )
+            session.add(user)
+            await session.commit()
+            return user.id
+    finally:
+        await engine.dispose()
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Seed demo accounts (developer/user).")
+    parser.add_argument("--email", required=True)
+    parser.add_argument(
+        "--role",
+        choices=[r.value for r in UserRole],
+        default=UserRole.DEVELOPER.value,
+        help="Account role (default: developer).",
+    )
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="Account password; if omitted, read from the SEED_PASSWORD env var.",
+    )
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="Override the database URL (default: Settings.database_url).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint. Never prints the password; prints only the account id."""
+
+    args = _parse_args(argv)
+    password = args.password or os.environ.get("SEED_PASSWORD")
+    if not password:
+        raise SystemExit("No password: pass --password or set SEED_PASSWORD.")
+    database_url = args.database_url or get_settings().database_url
+    role = UserRole(args.role)
+    account_id = asyncio.run(
+        seed_account(database_url, email=args.email, password=password, role=role)
+    )
+    print(f"seeded {role.value} account id={account_id}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
+    raise SystemExit(main())
