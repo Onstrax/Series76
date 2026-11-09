@@ -96,3 +96,29 @@ def test_catalog_tools_bind_to_a_model_and_read_the_real_edition(real: Engine) -
     result = PgCatalogToolProvider(real, "B").tools(context)["get_part_details"].invoke(
         {"part_number": pn})
     assert result.failure is None and result.facts
+
+
+def test_supply_mode_filters_select_the_printed_tables(real: Engine) -> None:
+    """'Runs on AC/DC' is T04 exactly; 'only DC' is T05 exactly (golden rows)."""
+
+    from series76_agent.integration.spec3 import PgCatalogToolProvider
+    from series76_agent.interpreter import settle_supply_modes
+    from series76_domain.tools.context import ToolContext
+    from series76_eval.ab_live import golden_rows
+
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    rows = golden_rows(doc)
+    tables = {t: {pn for pn, r in rows.items() if r.table == t} for t in ("T04", "T05")}
+    search = PgCatalogToolProvider(real, "B").tools(
+        ToolContext(edition_id=uuid.UUID(doc["edition_id"]), max_results=50))["search_parts"]
+    model_wrote = {"type": "predicate", "field": "current_mode", "operator": "IN",
+                   "value": ["AC", "DC"]}
+    for message, table in (("Which parts run on 24 V AC/DC?", "T04"),
+                           ("¿Qué partes funcionan solo con 24 V DC?", "T05")):
+        ast = {"type": "and", "children": [
+            {"type": "predicate", "field": "nominal_voltage", "operator": "EQ", "value": "24",
+             "unit": "V"},
+            settle_supply_modes(model_wrote, message)]}
+        result = search.invoke({"filter_ast": ast})
+        assert result.failure is None
+        assert set(result.verified_pns) == tables[table], (message, result.verified_pns)

@@ -304,3 +304,22 @@ def test_categorical_filter_values_are_mapped_to_documented_values() -> None:
     assert canonical_value(AllowlistField.SERVICE, "Modulating") == "Modulating"
     assert canonical_value(AllowlistField.SERVICE, "weird") == "weird"  # never invented
     assert canonical_value(AllowlistField.ENCLOSURE, "modulante") == "modulante"
+
+
+def test_supply_modes_follow_what_the_user_wrote() -> None:
+    from series76_agent.interpreter import settle_supply_modes
+
+    any_mode = {"type": "predicate", "field": "current_mode", "operator": "IN",
+                "value": ["AC", "DC"]}
+    both = settle_supply_modes(any_mode, "Which parts run on 24 V AC/DC?")
+    assert both == {"type": "and", "children": [
+        {"type": "predicate", "field": "current_mode", "operator": "EQ", "value": "AC"},
+        {"type": "predicate", "field": "current_mode", "operator": "EQ", "value": "DC"}]}
+    only_dc = settle_supply_modes(
+        {"type": "predicate", "field": "current_mode", "operator": "EQ", "value": "DC"},
+        "¿Qué partes funcionan solo con 24 V DC?")
+    assert only_dc["children"][1] == {"type": "not", "child": {
+        "type": "predicate", "field": "current_mode", "operator": "EQ", "value": "AC"}}
+    assert settle_supply_modes(any_mode, "Parts on 24 V") == any_mode  # nothing explicit
+    torque = {"type": "predicate", "field": "torque_inlbs", "operator": "GT", "value": "5"}
+    assert settle_supply_modes(torque, "only AC/DC") == torque  # other fields untouched

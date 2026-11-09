@@ -109,9 +109,11 @@ def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
     )
 
     if not args:
-        out("usage: ab-live <compose dir> [project]\n")
+        out("usage: ab-live <compose dir> [project] [--current]\n")
         return 2
-    compose = Compose(Path(args[0]).resolve(), args[1] if len(args) > 1 else "s76cold")
+    positional = [a for a in args if not a.startswith("--")]
+    compose = Compose(Path(positional[0]).resolve(),
+                      positional[1] if len(positional) > 1 else "s76cold")
     env = dotenv_values(compose.directory / ".env")
     email, password = os.environ.get("AB_EMAIL"), os.environ.get("AB_PASSWORD")
     if not (email and password and GOLDEN.exists()):
@@ -123,6 +125,13 @@ def _ab_live(args: list[str], out: Callable[[str], object]) -> int:
         "TOOL_CALLING": _split(env.get("AGENT_MODEL_CANDIDATES")),
     }
     configs = plan_configs(baseline, candidates)
+    if "--current" in args:  # only the stack's configured models (the selected setup)
+        from series76_eval.ab_live import LiveConfig
+
+        configs = [LiveConfig("current", None, {
+            "INTERPRETATION": str(env.get("INTERPRETER_MODEL") or baseline),
+            "TOOL_CALLING": baseline,
+        })]
     spent = sum((Decimal(str(e.get("cost_usd", "0"))) for e in compose.ledger()), Decimal(0))
     estimate = Decimal("0.15") * len(configs)  # generous: measured ~USD 0.002 per turn
     if spent + estimate > DEV_EVAL_CAP_USD:

@@ -43,6 +43,7 @@ from series76_agent.domain.plan import Ambiguity, DraftPlan, InterpretedPlan
 from series76_agent.domain.serialization import ast_to_json, draft_from_json, draft_to_json
 from series76_agent.domain.state_machine import Turn
 from series76_agent.fallback import RetryPolicy
+from series76_agent.followups import settle_turn
 from series76_agent.interpreter import InterpreterInput, SemanticInterpreter
 from series76_agent.language import resolve_language
 from series76_agent.models import (
@@ -286,7 +287,7 @@ class AgentOrchestrator:
             return await self._pause_for_clarification(
                 data, turn, state, interp_message, "reference", resp, budget, edition, lang
             )
-        draft = resolution.draft
+        draft = settle_turn(resolution.draft, message, state.focus)
 
         # ---- Policy (deterministic, zero LLM) ----
         decision = self._policy.decide(draft, session, plan_id=f"turn:{turn.turn_id}")

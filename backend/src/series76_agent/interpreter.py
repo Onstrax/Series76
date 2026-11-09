@@ -301,6 +301,7 @@ def build_draft(raw: InterpretationOutput, data: InterpreterInput) -> DraftPlan:
     if raw.filter_ast is not None:
         pruned = _prune_filter(raw.filter_ast.model_dump(), user_numbers, unresolved)
         if pruned is not None:
+            pruned = settle_supply_modes(pruned, message)
             try:
                 filter_ast = parse_filter_ast(pruned)
             except FilterParseError:
@@ -518,6 +519,48 @@ def canonical_value(field: AllowlistField, value: Any) -> Any:
     if isinstance(value, str):
         return table.get(value.strip().casefold(), value)
     return value
+
+
+_AC_DC = re.compile(r"\bac\s*/\s*dc\b", re.IGNORECASE)
+_ONLY = r"(?:only|solo|sólo|solamente|únicamente|unicamente|exclusivamente)"
+_ONLY_MODE = re.compile(
+    rf"\b{_ONLY}\b[^.?!]{{0,20}}\b(ac|dc)\b|\b(ac|dc)\b[^.?!]{{0,6}}\b{_ONLY}\b",
+    re.IGNORECASE)
+
+
+def _mode_eq(mode: str) -> dict[str, Any]:
+    return {"type": "predicate", "field": AllowlistField.CURRENT_MODE.value, "operator": "EQ",
+            "value": mode}
+
+
+def settle_supply_modes(node: dict[str, Any], message: str) -> dict[str, Any]:
+    """Give a current-mode predicate the supply meaning the user wrote.
+
+    The modes of a supply are a set: an "AC/DC" supply has both, so "runs on
+    AC/DC" needs AC **and** DC, never "AC or DC" (which also matches DC-only
+    parts); "only DC" means DC and not AC. Applied only when the message says
+    so explicitly; any other predicate is left as the model wrote it.
+    """
+
+    kind = node.get("type")
+    if kind in ("and", "or"):
+        return {**node, "children": [settle_supply_modes(c, message)
+                                     for c in node.get("children") or []]}
+    if kind == "not" and isinstance(node.get("child"), dict):
+        return {**node, "child": settle_supply_modes(node["child"], message)}
+    if kind != "predicate" or node.get("field") != AllowlistField.CURRENT_MODE.value:
+        return node
+    value = node.get("value")
+    values = {str(v).upper() for v in (value if isinstance(value, list) else [value])}
+    if _AC_DC.search(message) and values <= {"AC", "DC", "AC/DC"}:
+        return {"type": "and", "children": [_mode_eq("AC"), _mode_eq("DC")]}
+    only = _ONLY_MODE.search(message)
+    if only and not _AC_DC.search(message):
+        mode = (only.group(1) or only.group(2)).upper()
+        other = "AC" if mode == "DC" else "DC"
+        return {"type": "and", "children": [_mode_eq(mode),
+                                            {"type": "not", "child": _mode_eq(other)}]}
+    return node
 
 
 def _criterion(
