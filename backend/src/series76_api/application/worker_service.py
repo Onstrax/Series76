@@ -1,0 +1,310 @@
+"""Worker claim/lease/fencing turn processing (Spec 3, Req 6).
+
+The ``Worker_Process`` drains the durable ``turn_jobs`` queue without ever
+holding a SQL transaction across the model call (Property 27). One drained turn
+is three phases:
+
+1. **Claim + lease (short txn, NO external call).** Claim a reclaimable job with
+   ``SELECT ... FOR UPDATE SKIP LOCKED``; verify no *other* job in that
+   conversation holds a live ``RUNNING`` lease (Property 23); set
+   ``lease_expires_at`` 30-120s ahead, assign a strictly monotonic
+   ``Fencing_Token``, and increment ``attempt_count`` (Property 25). On an
+   expired-lease reclaim, if a result already exists the turn is NOT re-sent to
+   the model (Property 26). Commit.
+
+2. **Run the agent (OUTSIDE any SQL transaction).** Dispatch the faked agent
+   seam — zero provider spend. No SQL session is open here (Property 27).
+
+3. **Persist result (separate short txn).** Persist only if the fence is still
+   current, the lease is valid, the owner matches, and the conversation is not
+   tombstoned; a stale-fenced write affects zero rows and is rejected (Property
+   26, 32). Commit.
+
+A :class:`FixedClock` makes lease-expiry deterministic in tests.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from datetime import timedelta
+
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from series76_api.api.envelopes import (
+    EnvelopeStatus,
+    PlanReviewBlock,
+    ResponseEnvelope,
+    TextBlock,
+)
+from series76_api.application.agent_seam import (
+    AgentPort,
+    OutcomeKind,
+    ProviderUnavailable,
+    TurnRequest,
+)
+from series76_api.application.unit_of_work import UnitOfWork
+from series76_api.domain.crypto import AADContext, CryptoPurpose
+from series76_api.domain.models import JobState
+from series76_api.infrastructure.clock import Clock
+from series76_api.infrastructure.crypto import Ciphertext, CryptoService
+from series76_api.infrastructure.engine import AsyncSession
+from series76_api.infrastructure.orm import TurnJobORM
+from series76_api.infrastructure.settings import Settings
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimedJob:
+    """The data carried out of the claim transaction into the model call."""
+
+    job_id: uuid.UUID
+    session_id: uuid.UUID
+    owner_id: uuid.UUID
+    fencing_token: int
+    query: str
+    existing_result: bytes | None
+
+
+class WorkerService:
+    """Processes durable turn jobs with claim/lease/fencing (faked agent)."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        clock: Clock,
+        crypto: CryptoService,
+        agent: AgentPort,
+        settings: Settings,
+    ) -> None:
+        self._session_factory = session_factory
+        self._clock = clock
+        self._crypto = crypto
+        self._agent = agent
+        self._settings = settings
+
+    def _aad(
+        self,
+        purpose: CryptoPurpose,
+        owner_id: uuid.UUID,
+        session_id: uuid.UUID,
+        record_id: uuid.UUID,
+    ) -> AADContext:
+        return AADContext(
+            purpose=purpose,
+            owner_id=owner_id,
+            conversation_id=session_id,
+            record_id=record_id,
+        )
+
+    async def _unwrap_dek(
+        self, uow: UnitOfWork, session_id: uuid.UUID, owner_id: uuid.UUID
+    ) -> bytes | None:
+        handle = await uow.key_metadata.get_for_session(session_id)
+        if handle is None:
+            return None
+        return self._crypto.unwrap_dek(
+            handle.wrapped_dek, owner_id=owner_id, conversation_id=session_id
+        )
+
+    async def process_one(self) -> uuid.UUID | None:
+        """Drain one turn end-to-end, or return ``None`` if the queue is empty.
+
+        Returns the processed ``job_id`` on success. Guarantees that no SQL
+        transaction is open across the agent call (Property 27).
+        """
+
+        claimed = await self._claim_phase()
+        if claimed is None:
+            return None
+
+        # --- Phase 2: run the agent OUTSIDE any SQL transaction -----------
+        # If a result already exists (expired-lease reclaim) do NOT re-send to
+        # the model (Property 26) — just re-persist idempotently.
+        if claimed.existing_result is not None:
+            await self._persist_phase(claimed, result_ct=claimed.existing_result,
+                                      state=JobState.COMPLETED)
+            return claimed.job_id
+
+        try:
+            outcome = await self._agent.run_turn(
+                TurnRequest(
+                    owner_id=claimed.owner_id,
+                    session_id=claimed.session_id,
+                    query=claimed.query,
+                )
+            )
+        except ProviderUnavailable:
+            # Provider failure: record FAILED (retryable) without a result.
+            await self._fail_phase(claimed)
+            return claimed.job_id
+
+        state = (
+            JobState.NEEDS_CLARIFICATION
+            if outcome.outcome_kind is OutcomeKind.CLARIFICATION
+            else JobState.AWAITING_CONFIRMATION
+            if outcome.outcome_kind is OutcomeKind.CONFIRMATION
+            else JobState.COMPLETED
+        )
+        envelope = self._build_envelope(claimed.session_id, outcome)
+        result_ct = await self._encrypt_result(claimed, envelope)
+        if result_ct is None:
+            await self._fail_phase(claimed)
+            return claimed.job_id
+
+        # --- Phase 3: persist result in a separate short txn --------------
+        await self._persist_phase(claimed, result_ct=result_ct, state=state)
+        return claimed.job_id
+
+    async def _claim_phase(self) -> _ClaimedJob | None:
+        """Claim + lease a job in a short transaction with no external call."""
+
+        async with self._session_factory() as session:
+            uow = UnitOfWork(session)
+            now = self._clock.now()
+            job: TurnJobORM | None = await uow.turn_jobs.claim_next(now=now)
+            if job is None:
+                await uow.rollback()
+                return None
+
+            # At most one RUNNING per conversation (Property 23): if another job
+            # holds a live lease, leave this one QUEUED and skip it this round.
+            if await uow.turn_jobs.has_other_running(
+                job.session_id, except_job_id=job.job_id, now=now
+            ):
+                await uow.rollback()
+                return None
+
+            fence = await uow.turn_jobs.max_fencing_token(job.session_id) + 1
+            lease_until = now + timedelta(
+                seconds=self._settings.job_lease_seconds_min
+            )
+            await uow.turn_jobs.lease(
+                job.job_id,
+                fencing_token=fence,
+                lease_expires_at=lease_until,
+                at=now,
+            )
+            uow.job_attempts.add(
+                job_id=job.job_id, owner_id=job.owner_id, fencing_token=fence
+            )
+
+            # Decrypt the input query + detect an existing result (reclaim).
+            dek = await self._unwrap_dek(uow, job.session_id, job.owner_id)
+            query = ""
+            if dek is not None and job.input_ciphertext is not None:
+                query = self._crypto.decrypt(
+                    dek,
+                    Ciphertext(job.input_ciphertext),
+                    self._aad(
+                        CryptoPurpose.JOB_INPUT,
+                        job.owner_id,
+                        job.session_id,
+                        job.job_id,
+                    ),
+                ).decode("utf-8")
+            existing = job.result_ciphertext
+            await uow.commit()
+            return _ClaimedJob(
+                job_id=job.job_id,
+                session_id=job.session_id,
+                owner_id=job.owner_id,
+                fencing_token=fence,
+                query=query,
+                existing_result=existing,
+            )
+
+    async def _encrypt_result(
+        self, claimed: _ClaimedJob, envelope: ResponseEnvelope
+    ) -> bytes | None:
+        async with self._session_factory() as session:
+            uow = UnitOfWork(session)
+            dek = await self._unwrap_dek(uow, claimed.session_id, claimed.owner_id)
+            await uow.rollback()
+        if dek is None:
+            return None
+        return self._crypto.encrypt(
+            dek,
+            envelope.model_dump_json().encode("utf-8"),
+            self._aad(
+                CryptoPurpose.JOB_INPUT,
+                claimed.owner_id,
+                claimed.session_id,
+                claimed.job_id,
+            ),
+        ).blob
+
+    async def _persist_phase(
+        self, claimed: _ClaimedJob, *, result_ct: bytes, state: JobState
+    ) -> bool:
+        """Persist the result only if the fence is current + not tombstoned.
+
+        Returns whether the write won. A stale-fenced write (fence superseded
+        by a newer claim) affects zero rows and is rejected (Property 26); a
+        tombstoned conversation (fence <= tombstone) blocks the write so a
+        deleted conversation is never resurrected (Property 32).
+        """
+
+        async with self._session_factory() as session:
+            uow = UnitOfWork(session)
+            now = self._clock.now()
+            conv = await uow.conversations.get(claimed.session_id)
+            # No-resurrection guard: a tombstoned conversation whose recorded
+            # fence is >= this writer's fence blocks the write (Property 32).
+            if conv is None or conv.deleted_at is not None:
+                await uow.rollback()
+                return False
+            if (
+                conv.tombstone_fence is not None
+                and claimed.fencing_token <= conv.tombstone_fence
+            ):
+                await uow.rollback()
+                return False
+            won = await uow.turn_jobs.persist_result(
+                claimed.job_id,
+                fencing_token=claimed.fencing_token,
+                result_ciphertext=result_ct,
+                job_state=state,
+                at=now,
+            )
+            if won:
+                await uow.commit()
+            else:
+                await uow.rollback()
+            return won
+
+    async def _fail_phase(self, claimed: _ClaimedJob) -> None:
+        async with self._session_factory() as session:
+            uow = UnitOfWork(session)
+            now = self._clock.now()
+            job = await uow.turn_jobs.get(claimed.job_id)
+            if job is not None and job.fencing_token == claimed.fencing_token:
+                await uow.turn_jobs.set_state(
+                    claimed.job_id, job_state=JobState.FAILED, at=now
+                )
+                await uow.commit()
+            else:
+                await uow.rollback()
+
+    def _build_envelope(
+        self, session_id: uuid.UUID, outcome: object
+    ) -> ResponseEnvelope:
+        from series76_api.application.agent_seam import TurnOutcome
+
+        assert isinstance(outcome, TurnOutcome)
+        answer = outcome.answer or "Here is your response."
+        blocks = list(outcome.content_blocks)
+        if outcome.plan_summary is not None:
+            blocks.append(
+                PlanReviewBlock(summary=outcome.plan_summary, requires_confirmation=True)
+            )
+        if not blocks:
+            blocks = [TextBlock(text=answer)]
+        return ResponseEnvelope(
+            session_id=str(session_id),
+            answer=answer,
+            content_blocks=blocks,
+            status=outcome.status or EnvelopeStatus.COMPLETED,
+        )
+
+
+__all__ = ["WorkerService"]

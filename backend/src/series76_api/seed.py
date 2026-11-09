@@ -66,6 +66,33 @@ async def seed_account(
         await engine.dispose()
 
 
+async def seed_demo_accounts(
+    database_url: str,
+    *,
+    user_email: str,
+    developer_email: str,
+    user_password: str,
+    developer_password: str,
+) -> dict[str, uuid.UUID]:
+    """Provision both demo accounts (a ``user`` and a ``developer``).
+
+    Idempotent per email. Credentials come from the caller (env placeholders in
+    the CLI), never from committed source or the image (Req 12.4, 12.6).
+    Returns a mapping of role name to account id.
+    """
+
+    user_id = await seed_account(
+        database_url, email=user_email, password=user_password, role=UserRole.USER
+    )
+    dev_id = await seed_account(
+        database_url,
+        email=developer_email,
+        password=developer_password,
+        role=UserRole.DEVELOPER,
+    )
+    return {"user": user_id, "developer": dev_id}
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed demo accounts (developer/user).")
     parser.add_argument("--email", required=True)

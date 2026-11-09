@@ -77,7 +77,9 @@ class DomainError(Exception):
 
     code: ErrorCode = ErrorCode.INTERNAL_ERROR
 
-    def __init__(self, message: str = "", *, details: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, message: str = "", *, details: dict[str, str] | None = None
+    ) -> None:
         super().__init__(message or self.code.value)
         self.details: dict[str, str] = details or {}
 
@@ -147,6 +149,27 @@ class RateLimitedError(DomainError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class StalePlanError(DomainError):
+    """A non-current plan revision was confirmed -> 409 STALE_PLAN (Req 7.3)."""
+
+    code = ErrorCode.STALE_PLAN
+
+
+class GoneError(DomainError):
+    """An explicitly deleted/withdrawn/cancelled resource -> 410 (Req 8.4)."""
+
+    code = ErrorCode.JOB_CANCELLED
+
+
+class UpstreamUnavailableError(DomainError):
+    """A provider/upstream dependency failed -> 503 (Req 11.2, Property 48).
+
+    Kept strictly distinct from the ``NO_RESULTS`` success business outcome.
+    """
+
+    code = ErrorCode.UPSTREAM_UNAVAILABLE
+
+
 class CryptoError(DomainError):
     """Base for fail-closed crypto errors; maps to internal error by default."""
 
@@ -178,6 +201,9 @@ __all__ = [
     "NotFoundError",
     "ConflictError",
     "RateLimitedError",
+    "StalePlanError",
+    "GoneError",
+    "UpstreamUnavailableError",
     "CryptoError",
     "KeyUnavailableError",
     "DecryptionError",

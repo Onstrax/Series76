@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter
 from sqlalchemy import text
 
-from series76_api.api.dependencies import CryptoDep, SessionDep
+from series76_api.api.dependencies import CryptoDep, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -26,11 +26,18 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def ready(session: SessionDep, crypto: CryptoDep) -> dict[str, Any]:
+async def ready(
+    session: SessionDep, crypto: CryptoDep, settings: SettingsDep
+) -> dict[str, Any]:
     """Return readiness, distinguishing database from other dependencies.
 
-    Never raises on a degraded dependency: a failing probe is reported as a
-    ``False`` flag so the process stays up and surfaces the degradation.
+    Distinguishes **database** availability from **other critical
+    dependencies** — key material and the LLM **provider** (Property 49). A
+    degraded dependency is reported as a ``False`` flag so the process stays up
+    and surfaces the degradation rather than crashing. Overall readiness
+    requires the database and key material; a degraded *provider* is reported
+    but does not, on its own, crash the service (the sync turn surfaces
+    ``UPSTREAM_UNAVAILABLE`` honestly).
     """
 
     database_ok = False
@@ -42,12 +49,17 @@ async def ready(session: SessionDep, crypto: CryptoDep) -> dict[str, Any]:
 
     # ``has_kek`` is a boolean only; the KEK value itself is never exposed.
     key_material_ok = crypto.has_kek
-    ready_overall = database_ok
+    # Provider readiness is a configuration signal only; we never make an
+    # outbound call here (zero spend). An unconfigured provider is reported as
+    # a degraded-but-non-fatal dependency, distinct from the database.
+    provider_ok = bool(settings.openrouter_api_key or settings.agent_model)
+
     return {
-        "ready": ready_overall,
+        "ready": database_ok and key_material_ok,
         "dependencies": {
             "database": database_ok,
             "key_material": key_material_ok,
+            "provider": provider_ok,
         },
     }
 

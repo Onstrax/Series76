@@ -19,7 +19,14 @@ from fastapi import FastAPI
 
 from series76_api.api.errors import install_error_handlers
 from series76_api.api.routers import auth as auth_router
+from series76_api.api.routers import conversation as conversation_router
 from series76_api.api.routers import health as health_router
+from series76_api.api.routers import jobs as jobs_router
+from series76_api.api.routers import plans as plans_router
+from series76_api.api.routers import sessions as sessions_router
+from series76_api.api.routers import trace as trace_router
+from series76_api.application.agent_seam import AgentPort, FakeAgent
+from series76_api.infrastructure.checkpointer import EncryptedCheckpointer
 from series76_api.infrastructure.clock import Clock, SystemClock
 from series76_api.infrastructure.crypto import CryptoService
 from series76_api.infrastructure.engine import (
@@ -52,17 +59,21 @@ def create_app(
     *,
     clock: Clock | None = None,
     crypto: CryptoService | None = None,
+    agent: AgentPort | None = None,
 ) -> FastAPI:
     """Create and wire the FastAPI application.
 
-    Parameters are injectable so tests can supply a fake clock or an in-memory
-    crypto service. When omitted, production singletons are built from the
-    environment-backed :class:`Settings`.
+    Parameters are injectable so tests can supply a fake clock, an in-memory
+    crypto service, or a controllable agent seam. When omitted, production
+    singletons are built from the environment-backed :class:`Settings`; the
+    agent seam defaults to a deterministic, zero-spend :class:`FakeAgent` (the
+    real Spec 4 agent plugs in here without any change to this boundary).
     """
 
     resolved_settings = settings or get_settings()
     resolved_clock = clock or SystemClock()
     resolved_crypto = crypto or _build_crypto(resolved_settings)
+    resolved_agent: AgentPort = agent or FakeAgent()
 
     engine = create_app_engine(resolved_settings.database_url)
     session_factory = create_session_factory(engine)
@@ -83,12 +94,21 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.clock = resolved_clock
     app.state.crypto = resolved_crypto
+    app.state.agent = resolved_agent
     app.state.engine = engine
     app.state.session_factory = session_factory
+    # The encrypted LangGraph checkpointer is registered at the composition
+    # root so the agent runtime (Spec 4) resolves it without re-wiring crypto.
+    app.state.checkpointer = EncryptedCheckpointer(session_factory, resolved_crypto)
 
     install_error_handlers(app)
     app.include_router(health_router.router)
     app.include_router(auth_router.router)
+    app.include_router(conversation_router.router)
+    app.include_router(sessions_router.router)
+    app.include_router(jobs_router.router)
+    app.include_router(plans_router.router)
+    app.include_router(trace_router.router)
     return app
 
 

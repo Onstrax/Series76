@@ -39,6 +39,23 @@ def alembic_config(postgres_url: str) -> Config:
     return make_alembic_config(postgres_url)
 
 
+@pytest.fixture(scope="module")
+def migrated_db_module(postgres_url: str) -> Iterator[Config]:
+    """Module-scoped migrated schema for Hypothesis property suites.
+
+    Migrating once per module (rather than per example) keeps the >=100-example
+    property tests fast; tests isolate themselves with unique users/ids. The
+    schema is downgraded to base at module teardown.
+    """
+
+    cfg = make_alembic_config(postgres_url)
+    command.upgrade(cfg, "head")
+    try:
+        yield cfg
+    finally:
+        command.downgrade(cfg, "base")
+
+
 @pytest.fixture
 def migrated_db(alembic_config: Config) -> Iterator[Config]:
     """Upgrade to head for the test, then downgrade to base to leave a clean DB.

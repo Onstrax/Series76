@@ -12,7 +12,7 @@ owners.
 from __future__ import annotations
 
 import uuid
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from series76_api.application.unit_of_work import UnitOfWork
 from series76_api.domain.auth import parse_bearer_token
@@ -23,10 +23,22 @@ from series76_api.infrastructure.security import verify_token_secret
 
 
 class OwnedResource(Protocol):
-    """Anything with an authoritative ``owner_id`` (conversation, job, plan...)."""
+    """Anything with an authoritative ``owner_id`` (conversation, job, plan...).
 
-    @property
-    def owner_id(self) -> uuid.UUID: ...
+    Declared as a plain attribute (not a ``property``) so SQLAlchemy ORM models,
+    whose ``owner_id`` is a ``Mapped[UUID]`` descriptor, satisfy this Protocol
+    structurally.
+    """
+
+    owner_id: uuid.UUID
+
+
+# A resource the guard authorizes. Bound to ``object`` (not ``OwnedResource``)
+# because SQLAlchemy ORM instances expose ``owner_id`` as a ``Mapped[UUID]``
+# descriptor that the stock mypy config does not narrow to ``uuid.UUID``; the
+# guard reads the attribute defensively. The concrete type is preserved so
+# callers get back the exact ORM model they passed in.
+ResourceT = TypeVar("ResourceT")
 
 
 async def authenticate(
@@ -82,8 +94,8 @@ def resolve_owner_id(principal: AuthenticatedPrincipal) -> uuid.UUID:
 
 def authorize_ownership(
     principal: AuthenticatedPrincipal,
-    resource: OwnedResource | None,
-) -> OwnedResource:
+    resource: ResourceT | None,
+) -> ResourceT:
     """Authorize that ``resource`` is owned by the session principal.
 
     Returns the resource when the stored owner equals the session owner.
@@ -98,7 +110,8 @@ def authorize_ownership(
     let it raise before touching ciphertext or dispatching work.
     """
 
-    if resource is None or resource.owner_id != resolve_owner_id(principal):
+    owner = getattr(resource, "owner_id", None) if resource is not None else None
+    if resource is None or owner != resolve_owner_id(principal):
         raise NotFoundError("Resource not found.")
     return resource
 
