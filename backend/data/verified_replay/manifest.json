@@ -1,0 +1,98 @@
+{
+ "artifacts": [
+  {
+   "name": "T01.csv",
+   "path": "../audit/T01.csv",
+   "sha256": "7938aa9240fc5234caf5b870abf7d481ee8f795202c7ddb6e75d9e4005b44910",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T02.csv",
+   "path": "../audit/T02.csv",
+   "sha256": "ec86712bf32028f1dec7575544276ce4c283a32e1cb4b55bef576b8800fc7a16",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T03.csv",
+   "path": "../audit/T03.csv",
+   "sha256": "4abffa57ea695846baca8ecab38f0de40305f5ac1cce0b47ef9cb820af7ac452",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T04.csv",
+   "path": "../audit/T04.csv",
+   "sha256": "8f651005f8109765b5f957e1dca8b2056d4f428f1b96df34a4f80787824080af",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T05.csv",
+   "path": "../audit/T05.csv",
+   "sha256": "0c0d57cff07b58502260419a3e8753fa53e929e0b66d019d44808424d8c8de4d",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T06.csv",
+   "path": "../audit/T06.csv",
+   "sha256": "88bb16419d625b27d423402f32b730a815055777c9bd5ba9f96ffdecb0dc94f3",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "T07.csv",
+   "path": "../audit/T07.csv",
+   "sha256": "38891d341f9217bd49e114ea959e3aa6a09a5c068c3f520699f190da030e0a0d",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "notes.csv",
+   "path": "../audit/notes.csv",
+   "sha256": "95574f2e1431c11f74798e9a3d8ae477e957ca0b2c4eedf0c9c222d77f5a3200",
+   "transformations": [
+    "audit-sheet-csv/1"
+   ]
+  },
+  {
+   "name": "ocr_draft.json",
+   "path": "../audit/ocr_draft.json",
+   "sha256": "9ea7225cb64495e54a2792422f2620787bd3ac4ae11ff14810f2c605b453d5ad",
+   "transformations": [
+    "ocr-draft-json/1"
+   ]
+  }
+ ],
+ "audited_at": "2026-11-09",
+ "confirmed_ocr_guesses": 9,
+ "corrections": 55,
+ "counts": {
+  "na_values": 4,
+  "rows": 68,
+  "tables": 7
+ },
+ "edition_id": "8d87d10b-b63d-5c0e-8919-c76ecef70753",
+ "format": "series76-verified-replay/1",
+ "manifest_digest": "fd31e65e7be516b68a5533eee65ba0cd58faba658dfc6f2c86b276519b0ffb86",
+ "reviewer": "Juan Esteban Alvarez Garcia",
+ "source": {
+  "byte_size": 518460,
+  "filename": "series_76_electric_data.pdf",
+  "sha256": "4c28023929183df8e2a763e759cc84572b44604b30837a21e22c1166f88267e0"
+ },
+ "versions": {
+  "extractor": "human-audit-sheets/1 (draft: rapidocr-onnxruntime, two reads)",
+  "normalization": "series76-normalizer/1",
+  "rules": "series76-layout/1"
+ }
+}

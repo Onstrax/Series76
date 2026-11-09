@@ -105,7 +105,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     from series76_data.etl.layout import TABLES
-    from series76_data.etl.replay import NOTES_FILE
+    from series76_data.etl.replay import NOTES_FILE, artifact_names, parse_package
     from series76_data.etl.sheets import AuditProblems, SheetError, parse_notes, parse_sheet
 
     problems = AuditProblems()
@@ -129,6 +129,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         problems.add(NOTES_FILE, str(exc))
         notes = ()
     _out(f"rows marked OK: {ok}/{total}; unresolved '?' cells: {unsure}; notes: {len(notes)}")
+    if not problems.problems:  # the sheets parse: apply the same checks as `build`
+        try:
+            payloads = {n: (args.audit_dir / n).read_bytes() for n in artifact_names()}
+            parse_package(payloads, "check", "check")
+        except (SheetError, ValueError) as exc:
+            for line in str(exc).splitlines()[1:] or [str(exc)]:
+                problems.add("build", line.strip().removeprefix("- "))
     if problems.problems:
         _out(f"{len(problems.problems)} problem(s):")
         for p in problems.problems[: args.limit]:
@@ -168,8 +175,10 @@ def cmd_publish(args: argparse.Namespace) -> int:
     engine = create_engine(_db_url(args.database_url))
     with Session(engine) as session:
         edition, created = publish_replayed(session, replayed)
+        edition_id = edition.edition_id  # read while the session is open
+    engine.dispose()
     state = "published" if created else "already published (idempotent re-run recorded)"
-    _out(f"edition {edition.edition_id} {state}; manifest {replayed.digest}")
+    _out(f"edition {edition_id} {state}; manifest {replayed.digest}")
     return 0
 
 

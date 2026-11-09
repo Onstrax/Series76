@@ -28,18 +28,22 @@ This section lists only what has been executed. Everything else is marked
   property), the integration suites against a real PostgreSQL 15 container (Testcontainers),
   `ruff` and `mypy --strict`. Each executed level has an `Evidence_Record` in
   `docs/evidence/evidence.jsonl`. Run `python -m series76_eval status` in `backend/` to see them.
-- **[EXPERIMENT] — catalog data.** The ETL commands and a local-OCR **draft** of the audit
-  sheets (`backend/data/audit/`) exist. The human audit of `series_76_electric_data.pdf` is
-  not done yet, so the audited golden dataset and the `verified_replay` manifest do not
-  exist either. No language model transcribes the PDF. Until the audit is done, the
-  published catalog is empty, so the assistant finds no part numbers. It never makes any up.
+- **Catalog data: audited and verified.** Every row of `series_76_electric_data.pdf` was
+  audited by hand against the PDF images (reviewer: Juan Esteban Alvarez Garcia,
+  2026-11-09), starting from a local-OCR draft. No language model transcribed the PDF.
+  The audit confirmed the 7 tables / 68 rows / 4 N/A rows oracle. `build` wrote the
+  `verified_replay` manifest and the golden dataset (1012 cells). Level `01` publishes that
+  edition into a fresh PostgreSQL and finds every stored cell equal to its golden cell;
+  the result is in the evidence store.
 - **[EXPERIMENT] — Android.** No Gradle build, JVM test run or emulator run has been
   executed (no Android SDK in the authoring environment). See `android/README.md`.
 - **[EXPERIMENT] — live model evaluation.** It needs an `OPENROUTER_API_KEY`. No model or
   tool-set winner has been declared, because no paired A/B evidence exists.
-- **[EXPERIMENT] — Docker Compose cold start.** `docker-compose.yml` is written and its
-  provisioning step is integration-tested, but a full `docker compose up` from a clean clone
-  has not been recorded as evidence.
+- **[EXPERIMENT] — Docker Compose cold start.** The owner ran `docker compose up --build`
+  from a clean clone of commit `6091f87`, before the catalog was audited: `migrate` exited 0
+  and `api`, `worker` and `db` were up. That run predates the audited edition, which
+  `migrate` now publishes, so it is not recorded as evidence. A rerun from the current
+  commit is still pending.
 
 ## Setup
 
@@ -251,8 +255,8 @@ a manual audit. The ETL is `python -m series76_data`, run in `backend/`:
 | Command | What it does |
 |---|---|
 | `draft` | Local OCR (RapidOCR, no language model) reads each page twice, at 1x and 2x. It writes one audit sheet per table to `data/audit/`. Where the two reads disagree, or a value looks like a classic OCR confusion, the cell is marked `?`. It refuses to overwrite sheets that are being audited. Needs the `etl-draft` extra and poppler's `pdfimages`. |
-| `check` | Audit progress: rows marked `OK`, unresolved `?` cells, malformed values. |
-| `build --reviewer NAME` | Turns the audited sheets into `data/verified_replay/manifest.json` (SHA-256 of the PDF and of every artifact, versions, reviewer, counts, corrections, `manifest_digest`) and `data/golden/golden_dataset.json`. It refuses an incomplete audit, a changed row without a justification, and counts that differ from the 7/68/4 oracle. |
+| `check` | Audit progress: rows marked `OK`, unresolved `?` cells, malformed values (leading zeros, a column mixing decimal and whole numbers), plus every check `build` applies. |
+| `build --reviewer NAME` | Turns the audited sheets into `data/verified_replay/manifest.json` (SHA-256 of the PDF and of every artifact, versions, reviewer, counts, corrections, `manifest_digest`) and `data/golden/golden_dataset.json`. It refuses an incomplete audit, a row with a value no OCR read produced but no justification (choosing one of the OCR reads is recorded as a confirmation), and counts that differ from the 7/68/4 oracle. |
 | `publish` | `verified_replay`: verifies every artifact hash, re-derives the edition from the verified bytes, checks the manifest digest and the golden round trip, then publishes atomically through the Spec 1 gate. It is idempotent. Compose runs it in the one-shot `migrate` job. Until a manifest exists it is a no-op. |
 
 `python -m series76_eval documental-verify` then compares the published edition with the
@@ -305,9 +309,17 @@ The `fresh_extraction` extractor is a stub and is not delivered (owner decision,
 
 ## Known failures and gaps
 
-- **The catalog is empty until the manual audit is done**, so lookups return
-  "no matching part numbers" ([EXPERIMENT], above). The OCR draft is a candidate only;
-  nothing reaches the catalog without the reviewer's `OK` on every row.
+- **The audit was corrected after review.** The OCR draft is a candidate only. When the
+  audit was cross-checked against the PDF images, three problems were found and fixed
+  before `build`, and each fix is justified in the audit sheets:
+  - an operating speed typed as `033` instead of `33`;
+  - the `*` note ("Sizes 6 and 7 are not CSA Certified") had been set to apply to all rows,
+    and now applies only to the starred part numbers;
+  - several notes still had the OCR's glued words; they were re-transcribed letter for
+    letter.
+
+  `check` and `build` now reject leading zeros and flag a column that mixes decimal and
+  whole numbers (a point read as a comma).
 - **Traceability:** `F3-AT10` (Android cross-token) and `F3-AT11` (catalog failure) were
   listed only in the Spec 3 summary table. By owner decision they are now traced by Spec 5
   Requirement 9 and Spec 4 Requirement 10, whose behaviour already covered them; the matrix

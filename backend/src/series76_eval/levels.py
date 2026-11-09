@@ -68,9 +68,16 @@ _I = "tests/integration/"
 LEVELS: dict[TestLevel, LevelSpec] = {
     TestLevel.DOCUMENTAL: LevelSpec(
         TestLevel.DOCUMENTAL,
-        ("python", "-m", "series76_eval", "documental-verify"),
+        (
+            "pytest",
+            "-m",
+            "integration or not integration",
+            _U + "test_eval_p01_p03_oracle.py",
+            _I + "test_real_edition.py",
+        ),
         ("src/series76_eval/oracle.py", _U + "test_eval_p01_p03_oracle.py"),
-        requires="audited golden dataset (Spec 1 manual PDF audit, [EXPERIMENT])",
+        requires="audited golden dataset + Docker (the real edition is published into a "
+        "fresh PostgreSQL and compared cell by cell)",
     ),
     TestLevel.UNIT_DOMAIN: LevelSpec(
         TestLevel.UNIT_DOMAIN,
@@ -109,6 +116,7 @@ LEVELS: dict[TestLevel, LevelSpec] = {
             _I + "test_prop_repository.py",
             _I + "test_publisher.py",
             _I + "test_etl_publish.py",
+            _I + "test_real_edition.py",
         ),
         (_I + "test_migrations.py",),
         requires="Docker (real PostgreSQL container)",

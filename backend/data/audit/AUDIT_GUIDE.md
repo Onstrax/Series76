@@ -11,8 +11,8 @@ reviewer has confirmed every row against the PDF.
 | `notes.csv` | The printed notes, with the tables and rows each note covers. |
 | `ocr_draft.json` | The untouched OCR draft. Do not edit it: corrections are computed against it. |
 
-Open the PDF next to a sheet (a spreadsheet editor works; save as CSV, UTF-8, comma
-separated). The tables are laid out as follows:
+Open the PDF next to a sheet. Edit the sheets in a text editor (or VS Code): spreadsheet
+programs rewrite values such as `1,330` or `17.0`. Save as UTF-8. The tables are laid out as follows:
 
 | Sheet | PDF page | Heading |
 |---|---|---|
@@ -46,8 +46,9 @@ A cell holds exactly what the PDF prints in it:
 3. Check the merged cells: Motor Power `^` must cover exactly the rows of its printed group.
 4. Resolve every `?` cell.
 5. Write `OK` in the `Audit` column.
-6. If you changed anything in the row, write a short reason in `Justification`
-   (for example, `PDF p1 reads 108`).
+6. If you wrote a value that no OCR read produced, write a short reason in
+   `Justification` (for example, `PDF p1 reads 108`). Choosing one of the reads of a `?`
+   cell needs no justification: it is recorded as a confirmation of that read.
 
 For each note in `notes.csv`:
 
@@ -81,6 +82,8 @@ cd backend
 `build` refuses the audit in either of these cases:
 
 - a row is not marked `OK`, or a `?` remains;
-- a changed row has no justification;
+- a row holds a value that no OCR read produced, and has no justification;
+- a value has a leading zero, or a column mixes decimal and whole numbers (usually a
+  point read as a comma);
 - the counts differ from the expected 7 tables, 68 rows and 4 N/A rows (in that case it
   reports the discrepancy and fixes nothing).

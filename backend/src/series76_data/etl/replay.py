@@ -86,6 +86,14 @@ class Package:
     artifact_shas: dict[str, str]
 
 
+def ocr_reads(drafted: str) -> tuple[str, ...]:
+    """The candidate values of a drafted cell: ``?a|b`` -> (a, b); ``?a`` or ``a`` -> (a,)."""
+
+    if drafted.startswith(UNSURE):
+        return tuple(drafted.removeprefix(UNSURE).split("|"))
+    return (drafted,)
+
+
 def parse_package(payloads: Mapping[str, bytes], reviewer: str, source_sha: str) -> Package:
     """Parse audited artifact bytes; raises ``SheetError``/``ValueError`` on problems."""
 
@@ -96,30 +104,36 @@ def parse_package(payloads: Mapping[str, bytes], reviewer: str, source_sha: str)
     notes = parse_notes(payloads[NOTES_FILE].decode("utf-8"), problems)
     draft = json.loads(payloads[DRAFT_FILE].decode("utf-8"))
     corrections: list[dict[str, str]] = []
-    changed_rows: set[tuple[str, int]] = set()
     for sheet in sheets:
         t = sheet.layout.code
         drafted = draft["sheets"].get(t, [])
         for row in sheet.rows:
             before = drafted[row.ordinal - 1] if row.ordinal - 1 < len(drafted) else {}
             pairs = [("pn", row.printed_pn), *row.cells.items()]
+            overrides: list[str] = []
             for column, value in pairs:
                 prior = str(before.get(column, ""))
-                if prior.startswith(UNSURE) or prior != value:
-                    if prior != value:
-                        changed_rows.add((t, row.ordinal))
-                    corrections.append({
-                        "cell": cell_key(t, row.ordinal, column),
-                        "prior_value": prior.removeprefix(UNSURE),
-                        "verified_value": value,
-                        "reviewer": reviewer,
-                        "justification": row.justification
-                        or "OCR candidate confirmed against the PDF image",
-                        "source_document_hash": source_sha,
-                    })
-            if (t, row.ordinal) in changed_rows and not row.justification:
+                if prior == value:
+                    continue
+                reads = ocr_reads(prior)
+                if value in reads:  # the reviewer confirmed one of the OCR reads
+                    default = ("OCR read confirmed against the PDF image" if len(reads) == 1
+                               else f"OCR reads {' / '.join(reads)}: the PDF image shows {value}")
+                else:  # the reviewer wrote a value no OCR read produced
+                    overrides.append(f"{column}: {prior!r} -> {value!r}")
+                    default = ""
+                corrections.append({
+                    "cell": cell_key(t, row.ordinal, column),
+                    "prior_value": prior.removeprefix(UNSURE),
+                    "verified_value": value,
+                    "reviewer": reviewer,
+                    "justification": row.justification or default,
+                    "source_document_hash": source_sha,
+                })
+            if overrides and not row.justification:
                 problems.add(f"{t}.csv row {row.ordinal}",
-                             "values were changed: write a short Justification")
+                             "changed from the OCR draft (" + "; ".join(overrides)
+                             + "): write a short Justification")
     drafted_notes = draft.get("notes", [])
     for note in notes:
         prior = drafted_notes[note.index - 1] if note.index - 1 < len(drafted_notes) else ""

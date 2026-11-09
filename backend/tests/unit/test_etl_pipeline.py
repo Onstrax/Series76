@@ -294,6 +294,39 @@ def test_corrections_need_a_justification_and_are_recorded(tmp_path: Path) -> No
                    "source_document_hash": fix["source_document_hash"]}
 
 
+def test_choosing_an_ocr_read_is_a_confirmation_not_a_correction(tmp_path: Path) -> None:
+    audit, pdf = tmp_path / "audit", tmp_path / "s.pdf"
+    sheets = write_package(audit, pdf)
+    value = sheets["T04"][0]["onoff.torque_nm"]
+    draft = json.loads((audit / "ocr_draft.json").read_text())
+    draft["sheets"]["T04"][0]["onoff.torque_nm"] = f"?{value}|9{value}"  # two OCR reads
+    (audit / "ocr_draft.json").write_text(json.dumps(draft))
+
+    build(audit, tmp_path / "r", tmp_path / "g.json", REVIEWER, pdf, "d")  # no justification
+    package = replay(tmp_path / "r").package
+    fix = next(c for c in package.corrections if c["cell"] == "T04#1:onoff.torque_nm")
+    assert fix["verified_value"] == value
+    assert fix["justification"] == f"OCR reads {value} / 9{value}: the PDF image shows {value}"
+
+
+def test_a_leading_zero_is_refused(tmp_path: Path) -> None:
+    rows = sheet_rows(4, "T04")
+    rows[0]["onoff.torque_nm"] = "0" + rows[0]["onoff.torque_nm"]
+    problems = AuditProblems()
+    parse_sheet("T04", render("T04", rows), problems)
+    assert any("leading zero" in p for p in problems.problems)
+
+
+def test_a_column_mixing_decimals_and_whole_numbers_is_flagged(tmp_path: Path) -> None:
+    rows = sheet_rows(4, "T04")
+    key = "onoff.torque_nm"
+    assert all("." not in r[key] for r in rows)
+    rows[2][key] = rows[2][key].replace(",", ".") if "," in rows[2][key] else rows[2][key] + ".0"
+    problems = AuditProblems()
+    parse_sheet("T04", render("T04", rows), problems)
+    assert any("T04.csv rows 3" in p and "point/comma" in p for p in problems.problems)
+
+
 def test_golden_cells_digest_matches_the_spec6_oracle(tmp_path: Path) -> None:
     cat = _catalog(tmp_path)
     entries = cat.golden()

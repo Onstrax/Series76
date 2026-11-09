@@ -14,7 +14,7 @@ interface UiStrings {
     }
 }
 
-/** A table-backed resolver (JVM tests; mirrors res/values*/strings.xml keys). */
+/** A table-backed resolver (JVM tests; mirrors the keys of the res/values and res/values-es strings.xml files). */
 class TableUiStrings(private val language: String) : UiStrings {
     override fun string(key: String, args: List<String>): String {
         val table = if (language == "es") TABLE_ES else TABLE_EN

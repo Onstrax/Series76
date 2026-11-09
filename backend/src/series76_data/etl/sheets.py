@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from series76_data.etl.layout import TABLES_BY_CODE, TableLayout
+from series76_data.etl.layout import TABLES_BY_CODE, Column, TableLayout
 
 MERGED_ABOVE = "^"
 MERGED_LEFT = "<"
@@ -250,10 +250,37 @@ def parse_sheet(table: str, text: str, problems: AuditProblems) -> AuditedSheet:
                 problems.add(where, f"column '{col}': '<' on the first column has nothing left")
             elif v not in ("", NA, MERGED_ABOVE, MERGED_LEFT) and not NUMBER_RE.match(v):
                 problems.add(where, f"column '{col}': {v!r} is not a printed number, N/A, ^, <")
+            elif re.match(r"^0\d", v):
+                problems.add(where, f"column '{col}': {v!r} has a leading zero (none is printed)")
         audited.append(AuditedRow(ordinal, pn, cells, justification))
     if not audited:
         problems.add(f"{table}.csv", "no rows")
+    _check_column_formats(table, layout.columns, audited, problems)
     return AuditedSheet(layout, tuple(audited))
+
+
+def _check_column_formats(table: str, columns: tuple[Column, ...], rows: list[AuditedRow],
+                          problems: AuditProblems) -> None:
+    """Flag a column that mixes decimal numbers with whole numbers.
+
+    The catalog prints each column in one style: torques, counts and speeds as
+    whole numbers (thousands separated by a comma), currents with one decimal
+    after a point. A decimal value among whole numbers (or the reverse) is almost
+    always a comma read as a point, so it is reported for the reviewer to check.
+    """
+
+    for column in columns:
+        decimal: list[int] = []
+        whole: list[int] = []
+        for row in rows:
+            v = row.cells.get(column.key, "")
+            if NUMBER_RE.match(v):
+                (decimal if "." in v else whole).append(row.ordinal)
+        if decimal and whole:
+            odd = decimal if len(decimal) <= len(whole) else whole
+            problems.add(f"{table}.csv rows {', '.join(map(str, odd))}",
+                         f"column '{column.header}' mixes decimal and whole numbers: check the "
+                         "point/comma against the PDF")
 
 
 def parse_notes(text: str, problems: AuditProblems) -> tuple[AuditedNote, ...]:

@@ -1,34 +1,34 @@
 Tables,Marker,Printed Text,Rows,Audit,Justification
-"T01,T02",*,?Sizes 6 and 7 are not CSA Certified,?766A00-11320000/A*;766B00-11320000/A*;767A00-11320000/A*;767B00-11320000/A*;767C00-11320000/A*,,
-"T01,T02",1,?Full load current (FLA) @ Max. rated load,all,,
-"T01,T02",2,?Locked rotor current (LRA) @ Locked rotor load,all,,
-"T01,T02",3,?Allowable motor voltage tolerance: +/- 10%,all,,
-"T01,T02",4,?Allowable power frequency tolerance: +/- 5%,all,,
-"T01,T02",5,?Duty cycle per IEC 60034-1 for on/off and modulating service,all,,
-"T01,T02",6,?Starts and cycles per hour based on rated torque,all,,
-T03,1,?Full load current (FLA) (@ Max. rated load,all,,
-T03,2,?Locked rotor current (LRA) @ Locked rotor load,all,,
-T03,3,?Allowable motor voltage tolerance: +/- 10%,all,,
-T03,4,?Allowable power frequency tolerance: +/- 5%,all,,
-T03,5,?Duty cycle per IEC 60034-1 for on/off and modulating service,all,,
-T03,6,?Starts and cycles per hour based on rated torque,all,,
-"T04,T05",,"?Hazardous Location Certification(Area Classification)
+"T01,T02",*,Sizes 6 and 7 are not CSA Certified,766A00-11320000/A*;766B00-11320000/A*;767A00-11320000/A*;767B00-11320000/A*;767C00-11320000/A*,OK,PDF p1: the * marks only part numbers 766A-767C
+"T01,T02",1,Full load current (FLA) @ Max. rated load,all,OK,
+"T01,T02",2,Locked rotor current (LRA) @ Locked rotor load,all,OK,
+"T01,T02",3,Allowable motor voltage tolerance: +/- 10%,all,OK,
+"T01,T02",4,Allowable power frequency tolerance: +/- 5%,all,OK,
+"T01,T02",5,Duty cycle per IEC 60034-1 for on/off and modulating service,all,OK,
+"T01,T02",6,Starts and cycles per hour based on rated torque,all,OK,
+T03,1,Full load current (FLA) @ Max. rated load,all,OK,notes re-transcribed letter for letter from the PDF image
+T03,2,Locked rotor current (LRA) @ Locked rotor load,all,OK,
+T03,3,Allowable motor voltage tolerance: +/- 10%,all,OK,
+T03,4,Allowable power frequency tolerance: +/- 5%,all,OK,
+T03,5,Duty cycle per IEC 60034-1 for on/off and modulating service,all,OK,
+T03,6,Starts and cycles per hour based on rated torque,all,OK,
+"T04,T05",,"Hazardous Location Certification (Area Classification)
 Class I, Division 1, GRoups C, D; T4
 Ex d IIB T4 Gb
-Class I, Zone 1, AEx d IIB T4 Gb",all,,
-"T04,T05",1,?Fullload current(FLA)@ Max.rated load,all,,
-"T04,T05",2,?Lockedrotor current(LRA)@Lockedrotor load,all,,
-"T04,T05",3,?Allowable motor voltage tolerance:+/-10%,all,,
-"T04,T05",4,?Allowablepower frequency tolerance:+/-5%,all,,
-"T04,T05",5,?Duty cycle per IEC 60034-1for on/off and modulating service,all,,
-"T04,T05",6,?Starts and cyclesperhourbased onrated torque,all,,
-"T06,T07",1,"?HazardousLocation Certification(Area Classification)
-Class I, Division 1, Groups C, D; T4
-·Ex d lIB T4 Gb
-·Class I, Zone 1, AEx d IIB T4 Gb",all,,
-"T06,T07",2,?Full load current (FLA) @ Max. rated load,all,,
-"T06,T07",3,?Locked rotor current (LRA)@ Locked rotor load,all,,
-"T06,T07",4,?Allowable motor voltage tolerance:+/-10%,all,,
-"T06,T07",5,?Allowable power frequency tolerance:+/-5%,all,,
-"T06,T07",6,?Duty cycle per IEC 60034-1for on/off and modulating service,all,,
-"T06,T07",7,?9 onratedtorque,all,,
+Class I, Zone 1, AEx d IIB T4 Gb",all,OK,PDF p3 prints 'GRoups' (kept as printed)
+"T04,T05",1,Full load current (FLA) @ Max. rated load,all,OK,notes re-transcribed letter for letter from the PDF image
+"T04,T05",2,Locked rotor current (LRA) @ Locked rotor load,all,OK,notes re-transcribed letter for letter from the PDF image
+"T04,T05",3,Allowable motor voltage tolerance: +/- 10%,all,OK,notes re-transcribed letter for letter from the PDF image
+"T04,T05",4,Allowable power frequency tolerance: +/- 5%,all,OK,notes re-transcribed letter for letter from the PDF image
+"T04,T05",5,Duty cycle per IEC 60034-1 for on/off and modulating service,all,OK,notes re-transcribed letter for letter from the PDF image
+"T04,T05",6,Starts and cycles per hour based on rated torque,all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",1,"Hazardous Location Certification (Area Classification)
+• Class I, Division 1, Groups C, D; T4
+• Ex d IIB T4 Gb
+• Class I, Zone 1, AEx d IIB T4 Gb",all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",2,Full load current (FLA) @ Max. rated load,all,OK,
+"T06,T07",3,Locked rotor current (LRA) @ Locked rotor load,all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",4,Allowable motor voltage tolerance: +/- 10%,all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",5,Allowable power frequency tolerance: +/- 5%,all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",6,Duty cycle per IEC 60034-1 for on/off and modulating service,all,OK,notes re-transcribed letter for letter from the PDF image
+"T06,T07",7,Starts and cycles per hour based on rated torque,all,OK,notes re-transcribed letter for letter from the PDF image

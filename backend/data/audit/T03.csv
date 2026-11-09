@@ -1,12 +1,12 @@
 Row,Base Part Number,Output Torque / In-Lbs.,Output Torque / Nm,Duty Cycle / S4%,Cycles per Hour / Cycles,Starts per Hour / Starts,Operating Speed (sec) / 60 Hz,Operating Speed (sec) / 50 Hz,Full Load Current (FLA) [A] / 60 Hz,Full Load Current (FLA) [A] / 50 Hz,Locked Rotor Current (LRA) [A] / 60 Hz,Locked Rotor Current (LRA) [A] / 50 Hz,Motor Power / Watts,Audit,Justification
-1,761A00-11330C00/A,N/A,<,<,<,<,<,<,<,<,<,<,?,,
-2,761B00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,?,,
-3,762A00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,?,,
-4,?762B00-11330C0O/A|762B00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,?,,
-5,763A00-11330C00/A,"?2,650",300,70,?65|39,1200,26,32,1.0,1.0,1.2,1.2,40,,
-6,?763B00-11330C0O/A,"4,400",500,70,?65|39,1200,26,32,2.0,2.0,2.4,2.4,90,,
-7,?763CO0-1133OC0O/A|763C00-11330C00/A,?5.300,600,70,32,1200,32,39,2.0,2.0,2.4,2.4,^,,
-8,?764A00-11330C0O/A|764A00-11330C00/A,"7,080",800,70,36,1200,29,35,3.4,3.4,?4.0,4.0,180,,
-9,764B00-11330C00/A,"?10,600|10.600","1,200",70,29,1200,36,43,3.4,3.4,4.0,4.0,^,,
-10,765A00-11330C00/A,"17,700","2,000",50,8,1200,88,105,3.4,3.4,4.0,4.0,^,,
-11,?765B00-11330C0O/A,"26,500","3,000",50,6,1200,108,130,3.4,3.4,4.0,4.0,^,,
+1,761A00-11330C00/A,N/A,<,<,<,<,<,<,<,<,<,<,<,OK,PDF p2: the printed N/A block also spans Motor Power (mapping decision 4)
+2,761B00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,<,OK,PDF p2: the printed N/A block also spans Motor Power (mapping decision 4)
+3,762A00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,<,OK,PDF p2: the printed N/A block also spans Motor Power (mapping decision 4)
+4,762B00-11330C00/A,^,^,^,^,^,^,^,^,^,^,^,<,OK,PDF p2: the printed N/A block also spans Motor Power (mapping decision 4)
+5,763A00-11330C00/A,"2,650",300,70,39,1200,26,32,1.0,1.0,1.2,1.2,40,OK,
+6,763B00-11330C00/A,"4,400",500,70,39,1200,26,32,2.0,2.0,2.4,2.4,90,OK,"PDF p2 prints the digit 0, not the letter O"
+7,763C00-11330C00/A,"5,300",600,70,32,1200,32,39,2.0,2.0,2.4,2.4,^,OK,"PDF p2 prints 5,300 with a thousands comma"
+8,764A00-11330C00/A,"7,080",800,70,36,1200,29,35,3.4,3.4,4.0,4.0,180,OK,
+9,764B00-11330C00/A,"10,600","1,200",70,29,1200,36,43,3.4,3.4,4.0,4.0,^,OK,
+10,765A00-11330C00/A,"17,700","2,000",50,8,1200,88,105,3.4,3.4,4.0,4.0,^,OK,
+11,765B00-11330C00/A,"26,500","3,000",50,6,1200,108,130,3.4,3.4,4.0,4.0,^,OK,"PDF p2 prints the digit 0, not the letter O"
