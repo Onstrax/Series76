@@ -566,6 +566,20 @@ class TurnJobRepository:
         value = (await self._session.execute(stmt)).scalar_one_or_none()
         return (int(value) if value is not None else 0) + 1
 
+    async def pending_counts(self, owner_id: uuid.UUID) -> dict[uuid.UUID, int]:
+        """Outstanding (QUEUED / RUNNING) job count per conversation of an owner."""
+
+        stmt = (
+            select(TurnJobORM.session_id, func.count())
+            .where(
+                TurnJobORM.owner_id == owner_id,
+                TurnJobORM.job_state.in_([JobState.QUEUED, JobState.RUNNING]),
+            )
+            .group_by(TurnJobORM.session_id)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return {sid: int(n) for sid, n in rows}
+
     async def get_by_client_request_id(
         self, owner_id: uuid.UUID, client_request_id: str
     ) -> TurnJobORM | None:

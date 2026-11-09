@@ -97,6 +97,7 @@ class SessionSummary:
     title: str | None
     created_at: str
     updated_at: str
+    pending_jobs: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -553,6 +554,7 @@ class ConversationService:
             principal.user_id, limit=TITLE_SEARCH_CAP
         )
         summaries: list[SessionSummary] = []
+        pending = await self._uow.turn_jobs.pending_counts(principal.user_id)
         needle = title_query.strip().lower() if title_query else None
         for row in rows:
             title = await self._decrypt_title(principal.user_id, row)
@@ -564,6 +566,7 @@ class ConversationService:
                     title=title,
                     created_at=row.created_at.isoformat(),
                     updated_at=row.updated_at.isoformat(),
+                    pending_jobs=pending.get(row.session_id, 0),
                 )
             )
         return summaries

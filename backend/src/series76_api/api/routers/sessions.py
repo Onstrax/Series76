@@ -67,6 +67,7 @@ async def list_sessions(
             title=s.title,
             created_at=s.created_at,
             updated_at=s.updated_at,
+            pending_jobs=s.pending_jobs,
         )
         for s in summaries
     ]

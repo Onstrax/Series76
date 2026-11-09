@@ -25,6 +25,7 @@ A :class:`FixedClock` makes lease-expiry deterministic in tests.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -44,12 +45,26 @@ from series76_api.application.agent_seam import (
 )
 from series76_api.application.unit_of_work import UnitOfWork
 from series76_api.domain.crypto import AADContext, CryptoPurpose
+from series76_api.domain.errors import DomainError
 from series76_api.domain.models import JobState
 from series76_api.infrastructure.clock import Clock
 from series76_api.infrastructure.crypto import Ciphertext, CryptoService
 from series76_api.infrastructure.engine import AsyncSession
 from series76_api.infrastructure.orm import TurnJobORM
 from series76_api.infrastructure.settings import Settings
+
+
+@dataclass(frozen=True, slots=True)
+class _HistoryRecords:
+    """Encrypted history rows written with the result (same fenced txn)."""
+
+    user_id: uuid.UUID
+    user_ct: bytes
+    assistant_id: uuid.UUID
+    assistant_ct: bytes
+    assistant_blocks_ct: bytes
+    trace_id: uuid.UUID | None
+    trace_ct: bytes | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,21 +148,71 @@ class WorkerService:
                     trace_id=str(claimed.job_id),
                 )
             )
-        except ProviderUnavailable:
-            # Provider failure: record FAILED (retryable) without a result.
+        except (ProviderUnavailable, DomainError):
+            # Provider failure / fail-closed turn: FAILED without a result.
             await self._fail_phase(claimed)
             return claimed.job_id
 
         state = _JOB_STATE_BY_OUTCOME.get(outcome.outcome_kind, JobState.COMPLETED)
-        envelope = self._build_envelope(claimed.session_id, outcome)
+        assistant_id = uuid.uuid4()
+        envelope = build_response_envelope(
+            claimed.session_id, outcome, turn_id=str(assistant_id), message_id=str(assistant_id)
+        )
         result_ct = await self._encrypt_result(claimed, envelope)
         if result_ct is None:
             await self._fail_phase(claimed)
             return claimed.job_id
+        records = await self._history_records(claimed, envelope, assistant_id, outcome)
 
         # --- Phase 3: persist result in a separate short txn --------------
-        await self._persist_phase(claimed, result_ct=result_ct, state=state)
+        await self._persist_phase(claimed, result_ct=result_ct, state=state, records=records)
         return claimed.job_id
+
+    async def _history_records(
+        self,
+        claimed: _ClaimedJob,
+        envelope: ResponseEnvelope,
+        assistant_id: uuid.UUID,
+        outcome: TurnOutcome,
+    ) -> _HistoryRecords | None:
+        """Encrypt the turn's user + assistant messages (and trace) for history.
+
+        Written in the same fenced transaction as the result, so a stale or
+        tombstoned writer persists none of them (no resurrection).
+        """
+
+        async with self._session_factory() as session:
+            uow = UnitOfWork(session)
+            dek = await self._unwrap_dek(uow, claimed.session_id, claimed.owner_id)
+            await uow.rollback()
+        if dek is None:
+            return None
+        user_id = uuid.uuid4()
+
+        def enc(purpose: CryptoPurpose, record: uuid.UUID, data: bytes) -> bytes:
+            return self._crypto.encrypt(
+                dek, data, self._aad(purpose, claimed.owner_id, claimed.session_id, record)
+            ).blob
+
+        blocks = json.dumps([b.model_dump(mode="json") for b in envelope.content_blocks])
+        trace_id = uuid.uuid4()
+        return _HistoryRecords(
+            user_id=user_id,
+            user_ct=enc(CryptoPurpose.MESSAGE_CONTENT, user_id, claimed.query.encode("utf-8")),
+            assistant_id=assistant_id,
+            assistant_ct=enc(
+                CryptoPurpose.MESSAGE_CONTENT, assistant_id, envelope.answer.encode("utf-8")
+            ),
+            assistant_blocks_ct=enc(CryptoPurpose.MESSAGE_BLOCKS, assistant_id, blocks.encode()),
+            trace_id=trace_id if outcome.trace is not None else None,
+            trace_ct=enc(
+                CryptoPurpose.TOOL_TRACE,
+                trace_id,
+                json.dumps(outcome.trace, sort_keys=True, default=str).encode("utf-8"),
+            )
+            if outcome.trace is not None
+            else None,
+        )
 
     async def _claim_phase(self) -> _ClaimedJob | None:
         """Claim + lease a job in a short transaction with no external call."""
@@ -228,7 +293,12 @@ class WorkerService:
         ).blob
 
     async def _persist_phase(
-        self, claimed: _ClaimedJob, *, result_ct: bytes, state: JobState
+        self,
+        claimed: _ClaimedJob,
+        *,
+        result_ct: bytes,
+        state: JobState,
+        records: _HistoryRecords | None = None,
     ) -> bool:
         """Persist the result only if the fence is current + not tombstoned.
 
@@ -260,11 +330,43 @@ class WorkerService:
                 job_state=state,
                 at=now,
             )
+            if won and records is not None:
+                self._stage_history(uow, claimed, records)
+                await uow.flush()
+                if records.trace_id is not None and records.trace_ct is not None:
+                    row = uow.tool_traces.add(
+                        message_id=records.assistant_id,
+                        session_id=claimed.session_id,
+                        owner_id=claimed.owner_id,
+                        trace_ciphertext=records.trace_ct,
+                        duration_ms=None,
+                    )
+                    row.id = records.trace_id
             if won:
                 await uow.commit()
             else:
                 await uow.rollback()
             return won
+
+    def _stage_history(
+        self, uow: UnitOfWork, claimed: _ClaimedJob, records: _HistoryRecords
+    ) -> None:
+        uow.messages.add(
+            message_id=records.user_id,
+            session_id=claimed.session_id,
+            owner_id=claimed.owner_id,
+            role="user",
+            content_ciphertext=records.user_ct,
+            blocks_ciphertext=None,
+        )
+        uow.messages.add(
+            message_id=records.assistant_id,
+            session_id=claimed.session_id,
+            owner_id=claimed.owner_id,
+            role="assistant",
+            content_ciphertext=records.assistant_ct,
+            blocks_ciphertext=records.assistant_blocks_ct,
+        )
 
     async def _fail_phase(self, claimed: _ClaimedJob) -> None:
         async with self._session_factory() as session:

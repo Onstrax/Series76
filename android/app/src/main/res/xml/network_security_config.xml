@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Global cleartext is disallowed; cleartext is permitted ONLY for the Android
+     emulator's alias of the host loopback (10.0.2.2) so a locally run backend
+     can be reached during the assessment (Spec 5 Req 11.3, 11.4). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

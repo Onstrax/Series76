@@ -122,6 +122,7 @@ class SessionSummaryResponse(BaseModel):
     title: str | None
     created_at: str
     updated_at: str
+    pending_jobs: int = 0
 
 
 class MessageResponse(BaseModel):
