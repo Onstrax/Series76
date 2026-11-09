@@ -26,6 +26,8 @@ A :class:`FixedClock` makes lease-expiry deterministic in tests.
 from __future__ import annotations
 
 import json
+import logging
+import traceback
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -52,6 +54,8 @@ from series76_api.infrastructure.crypto import Ciphertext, CryptoService
 from series76_api.infrastructure.engine import AsyncSession
 from series76_api.infrastructure.orm import TurnJobORM
 from series76_api.infrastructure.settings import Settings
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +154,19 @@ class WorkerService:
             )
         except (ProviderUnavailable, DomainError):
             # Provider failure / fail-closed turn: FAILED without a result.
+            await self._fail_phase(claimed)
+            return claimed.job_id
+        except Exception as exc:  # noqa: BLE001 - an unexpected defect must not strand the job
+            # Fail closed instead of leaving the job RUNNING until its lease
+            # expires (a reclaim would re-send the turn and spend again). Only
+            # the error type and code locations are logged: an exception message
+            # may quote user or model text.
+            frames = traceback.extract_tb(exc.__traceback__)[-4:]
+            where = " <- ".join(
+                f"{f.filename.rsplit('/', 1)[-1]}:{f.lineno}" for f in reversed(frames)
+            )
+            _log.error("turn job %s failed unexpectedly: %s at %s",
+                       claimed.job_id, type(exc).__name__, where)
             await self._fail_phase(claimed)
             return claimed.job_id
 

@@ -9,6 +9,7 @@ Named with ``spec3`` for selectability.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -316,5 +317,43 @@ async def test_property_26_stale_fence_rejected(
                 )
             ).scalar_one()
         assert cnt == 1  # no duplication
+    finally:
+        await engine.dispose()
+
+
+async def test_an_unexpected_agent_defect_fails_the_job_instead_of_stranding_it(
+    postgres_url: str, migrated_db_module: Config, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A bug inside the agent ends the job FAILED; the log carries no message text."""
+
+    settings = build_settings(postgres_url)
+    crypto = CryptoService.from_base64_kek(settings.resolve_kek_base64())
+    factory, engine = create_test_session_factory(postgres_url)
+    clock = FixedClock(datetime(2025, 1, 1, tzinfo=UTC))
+
+    class _BrokenAgent(FakeAgent):
+        async def run_turn(self, request):  # type: ignore[no-untyped-def]
+            raise ValueError("secret user text that must not be logged")
+
+    try:
+        owner_id, session_id, dek = await _seed_user_and_conversation(factory, crypto)
+        await _enqueue_job(factory, crypto, owner_id, session_id, dek, 1)
+        worker = WorkerService(factory, clock, crypto, _BrokenAgent(), settings)
+        # Alembic's fileConfig (run by the migration fixture) disables loggers
+        # created before it; the worker process never runs it in-process.
+        logging.getLogger("series76_api.application.worker_service").disabled = False
+        with caplog.at_level("ERROR"):
+            job_id = await worker.process_one()
+        assert job_id is not None
+        async with factory() as s:
+            state = (
+                await s.execute(
+                    sa.text("SELECT job_state FROM execution.turn_jobs WHERE job_id = :j"),
+                    {"j": job_id},
+                )
+            ).scalar_one()
+        assert state == JobState.FAILED.value
+        assert "ValueError" in caplog.text
+        assert "secret user text" not in caplog.text
     finally:
         await engine.dispose()

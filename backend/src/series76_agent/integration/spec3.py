@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
+from langchain_core.tools import StructuredTool
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -251,6 +252,10 @@ class _PerCallTool:
         self._context = context
         self._tool_set = tool_set
 
+    def run(self, **kwargs: Any) -> Any:
+        """``StructuredTool`` entry point: the validated arguments as keywords."""
+        return self.invoke(kwargs)
+
     def invoke(self, input: dict[str, Any]) -> Any:  # noqa: A002 - LangChain signature
         with Session(self._engine) as session:
             try:
@@ -273,7 +278,29 @@ class PgCatalogToolProvider:
         self._tool_set = tool_set
 
     def tools(self, context: ToolContext) -> Mapping[str, Any]:
+        """LangChain tools carrying the Spec 2 name, description and args schema.
+
+        The model must see each tool's real schema (``bind_tools``); every call
+        still runs in its own short read-only session on the pinned edition.
+        """
+
         names = ("query_parts",) if self._tool_set == "A" else (
             "get_part_details", "search_parts", "get_source_notes"
         )
-        return {n: _PerCallTool(self._engine, n, context, self._tool_set) for n in names}
+        builder = build_set_a if self._tool_set == "A" else build_set_b
+        templates = builder(lambda: context, _no_repository)
+        out: dict[str, StructuredTool] = {}
+        for name in names:
+            runner = _PerCallTool(self._engine, name, context, self._tool_set)
+            template = templates[name]
+            out[name] = StructuredTool.from_function(
+                func=runner.run,
+                name=name,
+                description=template.description,
+                args_schema=template.args_schema,
+            )
+        return out
+
+
+def _no_repository(_context: ToolContext) -> Any:
+    raise CatalogUnavailable("schema-only tool template has no repository")

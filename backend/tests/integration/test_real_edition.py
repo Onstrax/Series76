@@ -10,6 +10,7 @@ are the 7/68/4 audit oracle and equality with the audited golden dataset.
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -70,3 +71,28 @@ def test_real_edition_matches_the_audit_oracle(real: Engine) -> None:
         parts = repo.list_part_numbers()
     assert len(parts) == 68
     assert len({p.canonical_pn for p in parts}) == 68
+
+
+def test_catalog_tools_bind_to_a_model_and_read_the_real_edition(real: Engine) -> None:
+    """Every tool the agent hands to ``bind_tools`` has an OpenAI schema and runs."""
+
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    from series76_agent.integration.spec3 import PgCatalogToolProvider
+    from series76_domain.tools.context import ToolContext
+
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    context = ToolContext(edition_id=uuid.UUID(doc["edition_id"]))
+    for tool_set, names in (("B", {"get_part_details", "search_parts", "get_source_notes"}),
+                            ("A", {"query_parts"})):
+        tools = PgCatalogToolProvider(real, tool_set).tools(context)
+        assert set(tools) == names
+        for name, tool in tools.items():
+            schema = convert_to_openai_tool(tool)
+            assert schema["function"]["name"] == name
+            assert schema["function"]["parameters"]["properties"]
+    with Session(real) as session:
+        pn = PostgresTypedRepository.resolve_active(session).list_part_numbers()[0].canonical_pn
+    result = PgCatalogToolProvider(real, "B").tools(context)["get_part_details"].invoke(
+        {"part_number": pn})
+    assert result.failure is None and result.facts
