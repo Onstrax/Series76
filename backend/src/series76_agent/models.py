@@ -406,6 +406,20 @@ class ModelGateway:
                 raise ProviderUnavailableError("provider unavailable; fallback aborted") from exc
             return await self._attempt(function, budget, fallback, invoke)
 
+    def _record_failed_call(self, function: ModelFunction, spec: RequestSpec) -> None:
+        self._ledger.record(
+            LedgerEntry(
+                provider="unknown",
+                model=spec.model,
+                function=function.value,
+                prompt_tokens=0,
+                completion_tokens=0,
+                cost_usd=self._config.call_estimate_usd,
+                category=self._config.spend_category,
+                cost_is_estimate=True,
+            )
+        )
+
     async def _attempt(
         self,
         function: ModelFunction,
@@ -430,6 +444,12 @@ class ModelGateway:
                 return await invoke(spec)
             except QuotaSignal as exc:
                 raise ProviderQuotaExceeded("provider quota exhausted") from exc
+            except Exception:
+                # A failed call may still have been billed (timeouts, truncated
+                # replies): record the pre-call estimate so the cumulative ledger
+                # never under-counts real spend.
+                self._record_failed_call(function, spec)
+                raise
 
         try:
             value, usage = await retry_idempotent(

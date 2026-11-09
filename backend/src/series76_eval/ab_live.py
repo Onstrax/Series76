@@ -737,7 +737,10 @@ def run_live(compose: Compose, client: StackClient, configs: Sequence[LiveConfig
     reports: list[ConfigReport] = []
     try:
         for cfg in configs:
+            # No fallback during the A/B: a candidate's failure must count as its own,
+            # not be hidden behind another model.
             values = {MODEL_KEYS[fn]: model for fn, model in cfg.models.items()}
+            values["FALLBACK_MODEL"] = ""
             compose.apply(env_with(original, values), client.base_url)
             before = compose.ledger()
             log(f"[{cfg.label}] running {len(SCENARIOS)} scenarios")

@@ -280,3 +280,34 @@ def test_model_providers_env_is_validated_and_reaches_the_request_spec() -> None
     (spec,) = seen
     assert spec.providers == ("groq", "deepinfra/bf16")  # type: ignore[attr-defined]
     assert spec.extra_body["provider"]["only"] == ["groq", "deepinfra/bf16"]  # type: ignore[attr-defined,index]
+
+
+def test_a_failed_provider_call_is_still_charged_as_an_estimate() -> None:
+    env = {"AGENT_MODEL": "m/a", "MODEL_CALL_ESTIMATE_USD": "0.02"}
+    config = ModelConfig.from_env(env)
+    registry = CapabilityRegistry({"m/a": frozenset({Capability.TOOLS})})
+    ledger = CostLedger()
+    gateway = ModelGateway(config, registry, ledger,
+                           retry=RetryPolicy(max_attempts=2, base_delay_s=0))
+
+    async def invoke(spec: RequestSpec) -> tuple[str, Usage]:
+        raise TransientError("call deadline exceeded")
+
+    with pytest.raises(ProviderUnavailableError):
+        asyncio.run(gateway.call(ModelFunction.TOOL_CALLING, BudgetTracker(TurnBudget()), invoke))
+    assert ledger.total_spent == Decimal("0.04")  # both attempts counted, never zero
+
+
+def test_deadline_and_truncated_replies_are_classified() -> None:
+    import openai
+
+    from series76_agent.llm import classify_provider_error, with_deadline
+
+    async def slow() -> str:
+        await asyncio.sleep(1)
+        return "late"
+
+    with pytest.raises(TransientError):
+        asyncio.run(with_deadline(slow(), deadline_s=0.01))
+    exc = openai.LengthFinishReasonError.__new__(openai.LengthFinishReasonError)
+    assert isinstance(classify_provider_error(exc), ProviderUnavailableError)

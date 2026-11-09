@@ -13,8 +13,9 @@ this repository asserts that a live call was executed.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -22,7 +23,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from series76_agent.fallback import TransientError
 from series76_agent.interpreter import InterpretationOutput
-from series76_agent.models import ModelConfig, QuotaSignal, RequestSpec, Usage
+from series76_agent.models import (
+    ModelConfig,
+    ProviderUnavailableError,
+    QuotaSignal,
+    RequestSpec,
+    Usage,
+)
 
 
 def _api_key(env: Mapping[str, str] | None = None) -> str:
@@ -62,7 +69,25 @@ def classify_provider_error(exc: BaseException) -> BaseException:
         return exc
     if isinstance(exc, openai.APIConnectionError | openai.APITimeoutError):
         return TransientError(type(exc).__name__)
+    if isinstance(exc, openai.LengthFinishReasonError | openai.ContentFilterFinishReasonError):
+        # The model produced no usable structured reply; retrying would spend
+        # again for the same outcome, so the turn fails with a clear error.
+        return ProviderUnavailableError(type(exc).__name__)
     return exc
+
+
+#: Wall-clock deadline of one provider call. The SDK timeout is per socket read,
+#: and the router's keep-alive bytes can keep a slow call open indefinitely.
+CALL_DEADLINE_S = 45.0
+
+
+async def with_deadline(call: Awaitable[Any], deadline_s: float = CALL_DEADLINE_S) -> Any:
+    """Await ``call`` for at most ``deadline_s``; a miss is a transient failure."""
+
+    try:
+        return await asyncio.wait_for(call, timeout=deadline_s)
+    except TimeoutError as exc:
+        raise TransientError("call deadline exceeded") from exc
 
 
 def usage_from_message(message: AIMessage) -> Usage:
@@ -110,7 +135,9 @@ class _ErrorMappingModel:
         class _Bound:
             async def ainvoke(self, messages: Any) -> Any:
                 try:
-                    return await bound.ainvoke(messages)
+                    return await with_deadline(bound.ainvoke(messages))
+                except TransientError:
+                    raise
                 except Exception as exc:  # noqa: BLE001 - classified below
                     mapped = classify_provider_error(exc)
                     if mapped is exc:
@@ -134,14 +161,16 @@ class OpenRouterInterpreterModel:
             InterpretationOutput, method="json_schema", include_raw=True
         )
         try:
-            out = await runnable.ainvoke(
+            out = await with_deadline(runnable.ainvoke(
                 [
                     SystemMessage(content=system),
                     HumanMessage(
                         content=f"Context: {context_hint}\nUser message (data):\n{message}"
                     ),
                 ]
-            )
+            ))
+        except TransientError:
+            raise
         except Exception as exc:  # noqa: BLE001 - classified below
             mapped = classify_provider_error(exc)
             if mapped is exc:
