@@ -106,7 +106,7 @@ cp .env.example .env
 | `POSTGRES_PASSWORD` | Any strong local password (database owner, used only by the `migrate` job). |
 | `DATABASE_URL` | Replace `CHANGE_ME_app_password` with any strong local password (least-privilege app login; created by `migrate`). |
 | `ENCRYPTION_KEK` | `python3 -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"` |
-| `OPENROUTER_API_KEY` | **Your OpenRouter key.** Without it the API still runs and every turn ends with an explained "could not answer" reply. |
+| `OPENROUTER_API_KEY` | **Your OpenRouter key.** Without a valid key the API still runs: `POST /api/conversation` answers `503 UPSTREAM_UNAVAILABLE` (retryable, with a `request_id`) and async turns end with an explained "could not answer" reply — never an invented answer. |
 | `AGENT_MODEL`, `INTERPRETER_MODEL`, `FALLBACK_MODEL` | Pre-filled with the models selected by the A/B; change them freely ([section 5.6](#56-model-choice-measured-not-guessed)). |
 | `MODEL_CAPABILITIES`, `MODEL_PROVIDERS` | Pre-filled and verified; regenerate with `python -m series76_eval probe-models` if you change models. |
 | `DEMO_USER_*`, `DEMO_DEVELOPER_*` | The pre-loaded test users ([section 6](#6-optional-features)). Leave as they are for a local demo. |
