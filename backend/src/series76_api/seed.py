@@ -9,6 +9,7 @@ environment, never from committed source.
 Run with::
 
     python -m series76_api.seed --email dev@example.com --role developer
+    python -m series76_api.seed --demo   # the documented demo user + developer (DEMO_* env)
 
 If ``--password`` is omitted the value is read from ``SEED_PASSWORD`` in the
 environment so credentials are never passed on the command line in CI.
@@ -95,7 +96,13 @@ async def seed_demo_accounts(
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed demo accounts (developer/user).")
-    parser.add_argument("--email", required=True)
+    parser.add_argument("--email", default=None)
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Seed the documented demo user + developer from DEMO_* env vars "
+        "(skipped when their passwords are empty).",
+    )
     parser.add_argument(
         "--role",
         choices=[r.value for r in UserRole],
@@ -115,10 +122,39 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _seed_demo(database_url: str) -> int:
+    """Pre-load the documented demo accounts (assessment: "pre-loaded test users").
+
+    Credentials come from ``DEMO_USER_EMAIL`` / ``DEMO_USER_PASSWORD`` /
+    ``DEMO_DEVELOPER_EMAIL`` / ``DEMO_DEVELOPER_PASSWORD``. Empty passwords
+    disable the demo accounts. Idempotent: existing accounts are left as they are.
+    """
+
+    env = os.environ
+    user_pw = env.get("DEMO_USER_PASSWORD", "")
+    dev_pw = env.get("DEMO_DEVELOPER_PASSWORD", "")
+    if not user_pw or not dev_pw:
+        print("demo accounts disabled (DEMO_USER_PASSWORD / DEMO_DEVELOPER_PASSWORD empty)")
+        return 0
+    ids = asyncio.run(seed_demo_accounts(
+        database_url,
+        user_email=env.get("DEMO_USER_EMAIL", "user@example.com"),
+        developer_email=env.get("DEMO_DEVELOPER_EMAIL", "dev@example.com"),
+        user_password=user_pw,
+        developer_password=dev_pw,
+    ))
+    print(f"demo accounts ready: user id={ids['user']} developer id={ids['developer']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint. Never prints the password; prints only the account id."""
 
     args = _parse_args(argv)
+    if args.demo:
+        return _seed_demo(args.database_url or get_settings().database_url)
+    if not args.email:
+        raise SystemExit("--email is required (or use --demo).")
     password = args.password or os.environ.get("SEED_PASSWORD")
     if not password:
         raise SystemExit("No password: pass --password or set SEED_PASSWORD.")

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -23,6 +24,8 @@ data class ToolCallView(
     val arguments: String,
     val ignoredServerArguments: List<String>,
     val isAttempt: Boolean,
+    /** What the tool returned (sanitized typed facts / search totals / failure code), as JSON. */
+    val returnedData: String = "",
 )
 
 /** The turn's overall execution, distinct from its individual tool attempts (Req 8.3). */
@@ -81,6 +84,8 @@ object TraceParser {
                 ignoredServerArguments = (c["ignored_server_arguments"] as? JsonArray).orEmpty()
                     .mapNotNull { (it as? JsonPrimitive)?.content },
                 isAttempt = origin == "agent",
+                returnedData = (results.getOrNull(i) as? JsonObject)?.get("data")
+                    ?.takeIf { it !is JsonNull }?.toString() ?: "",
             )
         }
         val duration = (obj["duration_ms"] as? JsonPrimitive)?.longOrNull

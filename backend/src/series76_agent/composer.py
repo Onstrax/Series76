@@ -103,6 +103,9 @@ from series76_domain.services.compare_parts import (
 #: Metrics shown in the answer text of a lookup (the card carries all).
 _ANSWER_SERVICE_METRICS = ("torque_inlbs", "torque_nm")
 _ANSWER_MEASUREMENT_METRICS = ("operating_speed", "fla")
+#: Metrics documented per service (On/Off, Modulating, or unattributed).
+_SERVICE_METRIC_KEYS = frozenset(
+    {"torque_inlbs", "torque_nm", "duty_s4", "cycles_per_hour", "starts_per_hour"})
 #: Metrics charted when comparable (bars only for comparable metrics).
 _CHART_METRICS = ("torque_inlbs", "torque_nm")
 _CARD_ORDER = (
@@ -430,7 +433,7 @@ class ResponseComposer:
                 )
             )
             lines, scope_missing, any_na, all_torque_na = self._lookup_lines(
-                ctx, pn, draft.service, frequency
+                ctx, pn, draft.service, frequency, draft.requested_metrics
             )
             # One value per line: the answer is read on a phone, next to the card.
             for line in lines:
@@ -477,10 +480,18 @@ class ResponseComposer:
         pn: str,
         service: str | None,
         frequency: Decimal | None,
+        requested: tuple[str, ...] = (),
     ) -> tuple[list[list[Segment]], str | None, bool, bool]:
         lines: list[list[Segment]] = []
         figs = ctx.figset.for_part(pn)
-        service_figs = [f for f in figs if f.metric_key in _ANSWER_SERVICE_METRICS]
+        # The metrics the user asked about lead the answer; the default summary
+        # (torque, speed, FLA) is used when none was named or none is printed.
+        asked = [k for k in requested if any(f.metric_key == k for f in figs)]
+        service_metrics = tuple(k for k in asked if k in _SERVICE_METRIC_KEYS) if asked \
+            else _ANSWER_SERVICE_METRICS
+        measure_metrics = tuple(k for k in asked if k not in _SERVICE_METRIC_KEYS) if asked \
+            else _ANSWER_MEASUREMENT_METRICS
+        service_figs = [f for f in figs if f.metric_key in service_metrics]
         scope_missing: str | None = None
         if service is not None:
             matching = [f for f in service_figs if same_service(f.service, service)]
@@ -488,9 +499,9 @@ class ResponseComposer:
                 service_figs = matching
             elif service_figs:
                 scope_missing = label(FIELD_LABELS, "service", ctx.lang)
-        meas_figs = [f for f in figs if f.metric_key in _ANSWER_MEASUREMENT_METRICS]
+        meas_figs = [f for f in figs if f.metric_key in measure_metrics]
         if frequency is not None:
-            matching = [f for f in meas_figs if f.frequency_hz == frequency]
+            matching = [f for f in meas_figs if f.frequency_hz in (frequency, None)]
             if matching:
                 meas_figs = matching
             elif meas_figs:

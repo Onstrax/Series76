@@ -13,7 +13,8 @@ to the Spec 3 :class:`~series76_api.application.agent_seam.TurnOutcome`:
 * a cancelled / deleted conversation raises ``GoneError`` (no resurrection).
 
 The debug trace attached to the outcome is content-light (turn states, tool
-names/origins/statuses, typed arguments, counts) and is encrypted by Spec 3 and
+names/origins/statuses, typed arguments, the sanitized data each tool returned,
+counts) and is encrypted by Spec 3 and
 served only to the owning developer. No prompt, key, or model name is in it.
 """
 
@@ -42,6 +43,7 @@ from series76_api.application.agent_seam import (
     TurnRequest,
 )
 from series76_api.domain.errors import BudgetExceededError, GoneError
+from series76_domain.tools.context import ToolResult
 
 _UNAVAILABLE = {
     OutcomeCode.PROVIDER_UNAVAILABLE,
@@ -142,9 +144,41 @@ def debug_trace(result: TurnResult) -> dict[str, Any]:
             for inv in result.invocations
         ],
         "tool_results": [
-            {"tool": inv.name, "status": inv.status.value} for inv in result.invocations
+            {"tool": inv.name, "status": inv.status.value, "data": returned_data(inv.result)}
+            for inv in result.invocations
         ],
     }
+
+
+def returned_data(result: ToolResult | None) -> dict[str, Any] | None:
+    """What a tool returned, as the developer Debug screen shows it.
+
+    Only the sanitized, typed surface the model also saw: catalog facts
+    (field, value, unit, status), search totals and part numbers, or the single
+    failure code. Never the server-side payload, evidence internals or text.
+    """
+
+    if result is None:
+        return None
+    if result.failure is not None:
+        return {"failure": result.failure.value}
+    data: dict[str, Any] = {}
+    if result.facts:
+        data["facts"] = [
+            {"field": f.key, "value": f.value, "unit": f.unit, "status": f.status.value,
+             **({"derived": True} if f.is_derived else {})}
+            for f in result.facts
+        ]
+    if result.total_matches is not None:
+        data["total_matches"] = result.total_matches
+        data["verified_part_numbers"] = list(result.verified_pns)
+        if result.preliminary_pns:
+            data["preliminary_part_numbers"] = list(result.preliminary_pns)
+        if result.next_cursor is not None:
+            data["next_cursor"] = result.next_cursor
+    if result.not_documented:
+        data["not_documented"] = True
+    return data
 
 
 class Series76Agent:

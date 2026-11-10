@@ -133,6 +133,8 @@ class DraftPlan:
     frequency_hz: str | None = None
     target_unit: str | None = None
     injection_detected: bool = False
+    #: Metric keys the message names (deterministic lexicon), e.g. ("motor_power",).
+    requested_metrics: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.intent, Intent):

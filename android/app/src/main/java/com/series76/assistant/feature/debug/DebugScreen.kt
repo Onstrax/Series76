@@ -93,7 +93,12 @@ private fun TraceContent(trace: TraceView) {
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Text(call.status)
+                    Text(stringResource(R.string.debug_parameters), style = MaterialTheme.typography.labelSmall)
                     Text(call.arguments, style = MaterialTheme.typography.bodySmall)
+                    if (call.returnedData.isNotEmpty()) {
+                        Text(stringResource(R.string.debug_returned), style = MaterialTheme.typography.labelSmall)
+                        Text(call.returnedData, style = MaterialTheme.typography.bodySmall)
+                    }
                     if (call.ignoredServerArguments.isNotEmpty()) {
                         Text(call.ignoredServerArguments.joinToString(), style = MaterialTheme.typography.labelSmall)
                     }

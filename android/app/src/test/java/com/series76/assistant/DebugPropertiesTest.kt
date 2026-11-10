@@ -115,4 +115,38 @@ class DebugPropertiesTest {
         assertTrue(config.contains("<domain includeSubdomains=\"false\">10.0.2.2</domain>"))
         assertEquals(1, Regex("<domain ").findAll(config).count()) // only the emulator loopback
     }
+
+    // Assessment: the Debug screen shows the tools, their parameters and the data they returned.
+    @Test
+    fun returnedDataIsShownPerToolCall() {
+        val raw = buildJsonObject {
+            put("steps", buildJsonArray { add(buildJsonObject { put("turn_id", "t") }) })
+            put("tool_args", buildJsonArray {
+                add(buildJsonObject {
+                    put("tool", "get_part_details")
+                    put("origin", "agent")
+                    put("arguments", buildJsonObject { put("part_number", "76-100") })
+                })
+            })
+            put("tool_results", buildJsonArray {
+                add(buildJsonObject {
+                    put("tool", "get_part_details")
+                    put("status", "OK")
+                    put("data", buildJsonObject {
+                        put("facts", buildJsonArray {
+                            add(buildJsonObject {
+                                put("field", "On/Off:torque_inlbs")
+                                put("value", "100")
+                                put("unit", "in-lbs")
+                            })
+                        })
+                    })
+                })
+            })
+        }
+        val call = TraceParser.parse(raw).toolCalls.single()
+        assertTrue(call.arguments.contains("76-100"))
+        assertTrue(call.returnedData.contains("On/Off:torque_inlbs"))
+        assertTrue(call.returnedData.contains("100"))
+    }
 }

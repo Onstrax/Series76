@@ -95,6 +95,8 @@
     <string name="debug_outcome">Outcome: %1$s</string>
     <string name="debug_states">States: %1$s</string>
     <string name="debug_model_calls">Model calls: %1$d</string>
+    <string name="debug_parameters">Parameters</string>
+    <string name="debug_returned">Returned data</string>
     <string name="debug_turn">Turn %1$s</string>
     <string name="turn_draft">Draft</string>
     <string name="turn_submitting">Sending…</string>

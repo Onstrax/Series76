@@ -350,3 +350,15 @@ def test_catalog_builder_has_no_hidden_inputs(tmp_path: Path) -> None:
     a = _catalog(tmp_path / "a")
     b = build_catalog(a.sheets, a.notes)
     assert [r.__repr__() for r in a.rows] == [r.__repr__() for r in b.rows]
+
+
+def test_ingest_entry_point_verifies_the_shipped_processed_data() -> None:
+    """`python ingest.py` (the assessment's ingestion script) re-derives the edition."""
+
+    backend = Path(__file__).resolve().parents[2]
+    if not (backend / "data" / "verified_replay" / "manifest.json").exists():
+        pytest.skip("no audited edition committed")
+    proc = subprocess.run([sys.executable, "ingest.py"], cwd=backend, capture_output=True,
+                          text=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr
+    assert "verified_replay OK" in proc.stdout and "7 tables, 68 rows, 4 N/A" in proc.stdout

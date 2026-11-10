@@ -115,6 +115,7 @@ def draft_to_json(draft: DraftPlan) -> dict[str, Any]:
         "frequency_hz": draft.frequency_hz,
         "target_unit": draft.target_unit,
         "injection_detected": draft.injection_detected,
+        "requested_metrics": list(draft.requested_metrics),
     }
 
 
@@ -161,6 +162,7 @@ def draft_from_json(raw: dict[str, Any]) -> DraftPlan:
         frequency_hz=raw.get("frequency_hz"),
         target_unit=raw.get("target_unit"),
         injection_detected=bool(raw.get("injection_detected", False)),
+        requested_metrics=tuple(str(m) for m in raw.get("requested_metrics", [])),
     )
 
 

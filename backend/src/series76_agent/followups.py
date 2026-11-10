@@ -11,6 +11,8 @@ never invent a part number, a value or a scope:
   nothing undocumented is a lookup of that part.
 * **Resolved follow-up**: a ``FOLLOWUP`` whose references already resolved to
   part numbers ("show me the second one") is a lookup of exactly those parts.
+* **Metric about the focus**: a question naming a documented metric but no part
+  ("and how much power does it draw?") is a lookup of the single part in focus.
 * **Refinement of the focus**: a ``FOLLOWUP`` naming only a documented
   frequency ("and at the lower frequency?") applies to the single part in focus.
 * **Language switch**: a message that only asks for another language repeats
@@ -28,7 +30,7 @@ from series76_agent.language import explicit_switch
 
 #: Attributes the source PDF never documents (EN/ES stems).
 _UNDOCUMENTED = re.compile(
-    r"\b(price|prices|pricing|cost|costs|how much|precio|precios|cu[aá]nto cuesta|costo|"
+    r"\b(price|prices|pricing|cost|costs|precio|precios|cu[aá]nto cuesta|costo|"
     r"coste|manufactur\w*|maker|fabric\w*|brand|marca|warranty|garant[ií]a|weight|peso|"
     r"lead time|stock|availability|disponibilidad|plazo de entrega|delivery)\b",
     re.IGNORECASE,
@@ -89,6 +91,14 @@ def settle_turn(draft: DraftPlan, message: str, focus: tuple[str, ...]) -> Draft
             return replace(draft, intent=Intent.EXACT_LOOKUP,
                            referents=(_focus_referent(single_focus),))
         return draft
+    if (draft.requested_metrics and not draft.part_numbers and single_focus is not None
+            and draft.intent in (Intent.FOLLOWUP, Intent.EXACT_LOOKUP, Intent.OUT_OF_SCOPE)
+            and draft.filter_ast is None):
+        # "and how much power does it draw?": a documented metric about the single
+        # part in focus, without repeating its part number.
+        return replace(draft, intent=Intent.EXACT_LOOKUP,
+                       frequency_hz=_frequency_qualifier(message) or draft.frequency_hz,
+                       referents=(_focus_referent(single_focus),))
     if draft.intent is not Intent.FOLLOWUP:
         return draft
     if draft.part_numbers:

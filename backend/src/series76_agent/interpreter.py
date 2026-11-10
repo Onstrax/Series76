@@ -82,6 +82,34 @@ PRIORITY_LEXICON: dict[str, tuple[str, ...]] = {
     "motor_power": ("power", "potencia", "watt"),
 }
 
+#: Words that name a documented metric in a question (EN/ES). Torque words name
+#: both torque columns; "power"/"draw" the motor power; "locked" the LRA.
+_REQUEST_LEXICON: dict[str, tuple[str, ...]] = {
+    "torque_inlbs": (r"\btorque\b", r"\bpar\b", r"in-?lbs?"),
+    "torque_nm": (r"\btorque\b", r"\bpar\b", r"\bnm\b"),
+    "operating_speed": (r"\bspeed\b", r"\bvelocidad\b", r"\bhow (fast|long)\b",
+                        r"\bcu[aá]nto tarda\b"),
+    "fla": (r"\bfla\b", r"full[- ]load", r"\bplena carga\b"),
+    "lra": (r"\blra\b", r"locked[- ]rotor", r"rotor bloqueado"),
+    "duty_s4": (r"\bduty\b", r"ciclo de trabajo", r"\bs4\b"),
+    "cycles_per_hour": (r"\bcycles?\b", r"\bciclos\b"),
+    "starts_per_hour": (r"\bstarts?\b", r"\barranques\b"),
+    "motor_power": (r"\bpower\b", r"\bpotencia\b", r"\bwatts?\b", r"\bdraws?\b",
+                    r"\bconsume\b"),
+}
+_CURRENT_WORD = re.compile(r"\b(current|corriente|amps?|amperaje|amperage)\b", re.IGNORECASE)
+
+
+def requested_metrics(message: str) -> tuple[str, ...]:
+    """The documented metrics a message names, in catalog order (deterministic)."""
+
+    found = [key for key, patterns in _REQUEST_LEXICON.items()
+             if any(re.search(p, message, re.IGNORECASE) for p in patterns)]
+    if _CURRENT_WORD.search(message) and not {"fla", "lra"} & set(found):
+        found += ["fla", "lra"]  # "current" alone names both printed currents
+    return tuple(found)
+
+
 _INJECTION = re.compile(
     r"(ignore (all |any |the )?(previous|prior|above|earlier) (instructions|rules)|"
     r"system prompt|you are now|act as (an? )?(admin|administrator|developer|root)|"
@@ -378,6 +406,7 @@ def build_draft(raw: InterpretationOutput, data: InterpreterInput) -> DraftPlan:
         frequency_hz=frequency,
         target_unit=target_unit,
         injection_detected=bool(_INJECTION.search(message)),
+        requested_metrics=requested_metrics(message),
     )
 
 

@@ -101,3 +101,40 @@ async def test_spec3_cold_start_serves_with_degraded_provider(
         assert deps["key_material"] is True
         # Provider degraded but the process still serves (did not crash).
         assert deps["provider"] is False
+
+
+def test_seed_demo_preloads_the_documented_test_users(
+    migrated_db: Config, postgres_url: str, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`seed --demo` (run by the Compose migrate job) pre-loads both test users."""
+
+    import asyncio
+
+    from sqlalchemy import select
+
+    from series76_api.seed import main
+
+    suffix = uuid.uuid4().hex[:8]
+    monkeypatch.setenv("DEMO_USER_EMAIL", f"user-{suffix}@example.com")
+    monkeypatch.setenv("DEMO_DEVELOPER_EMAIL", f"dev-{suffix}@example.com")
+    monkeypatch.setenv("DEMO_USER_PASSWORD", STRONG_PASSWORD)
+    monkeypatch.setenv("DEMO_DEVELOPER_PASSWORD", STRONG_PASSWORD)
+    assert main(["--demo", "--database-url", postgres_url]) == 0
+    assert main(["--demo", "--database-url", postgres_url]) == 0  # idempotent
+
+    async def roles() -> dict[str, UserRole]:
+        engine = create_app_engine(postgres_url)
+        try:
+            async with create_session_factory(engine)() as s:
+                rows = (await s.execute(select(UserORM).where(
+                    UserORM.email.like(f"%-{suffix}@example.com")))).scalars().all()
+                return {u.email: u.role for u in rows}
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(roles()) == {f"user-{suffix}@example.com": UserRole.USER,
+                                    f"dev-{suffix}@example.com": UserRole.DEVELOPER}
+    monkeypatch.setenv("DEMO_USER_PASSWORD", "")
+    assert main(["--demo", "--database-url", postgres_url]) == 0
+    assert "demo accounts disabled" in capsys.readouterr().out

@@ -38,7 +38,7 @@ services:
     command:
       - sh
       - -c
-      - alembic upgrade head && python -m series76_api.provision && python -m series76_data publish
+      - alembic upgrade head && python -m series76_api.provision && python -m series76_data publish && python -m series76_api.seed --demo
     depends_on:
       db:
         condition: service_healthy

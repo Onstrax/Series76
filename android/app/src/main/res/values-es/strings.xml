@@ -93,6 +93,8 @@
     <string name="debug_outcome">Resultado: %1$s</string>
     <string name="debug_states">Estados: %1$s</string>
     <string name="debug_model_calls">Llamadas al modelo: %1$d</string>
+    <string name="debug_parameters">Parámetros</string>
+    <string name="debug_returned">Datos devueltos</string>
     <string name="debug_turn">Turno %1$s</string>
     <string name="turn_draft">Borrador</string>
     <string name="turn_submitting">Enviando…</string>

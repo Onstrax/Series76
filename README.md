@@ -1,425 +1,578 @@
 # Series 76 Technical Assistant
 
-A conversational technical assistant for the Series 76 electric actuator catalog.
-It answers part-number lookups, filtered searches, comparisons and recommendations
-from a **published, audited catalog edition**. Every technical figure it shows traces
-to a cell of `series_76_electric_data.pdf`; the language model never supplies a
-number, SQL, catalog edition or permission.
+A technical assistant for the Series 76 electric actuators: a **Python/FastAPI backend**
+with a **LangChain/LangGraph agent** and a **native Android app (Kotlin + Jetpack Compose)**.
+Plant engineers ask about a specific actuator by its Base Part Number, search and compare
+models, and get recommendations from their requirements, in English or Spanish.
 
-| Component | Path | Spec (`.kiro/specs/…`) |
-|---|---|---|
-| Ingestion pipeline + catalog schema | `backend/src/series76_data`, `backend/migrations` | `data-and-ingestion` |
-| Deterministic domain + typed tools | `backend/src/series76_domain` | `domain-and-tools` |
-| HTTP API, auth, jobs, worker, crypto | `backend/src/series76_api` | `backend-api-auth-jobs-crypto` |
-| Agent orchestration + typed responses | `backend/src/series76_agent` | `agent-orchestration-response` |
-| Android client (Kotlin + Compose) | `android/` | `android-app` |
-| Evaluation harness, evidence, traceability | `backend/src/series76_eval`, `docs/` | `evaluation-and-reproducibility` |
+**Every technical figure the user sees comes from a cell of
+`series_76_electric_data.pdf`.** The language model interprets the question and chooses
+tools; it never supplies a number, SQL, the catalog edition or a permission. Numbers come
+from typed, deterministic tools over a human-audited, published catalog edition, and the
+answer text is composed from those same verified figures.
 
-Architecture decisions are recorded as ADRs in `backend/docs/adr/`. The API contract
-snapshot is `docs/contract/openapi.json`, and the cross-spec traceability matrix is
-`docs/traceability/TRACEABILITY.md`.
+- [Deliverables checklist](#deliverables-checklist-assessment-section-8)
+- [Status at delivery](#status-at-delivery)
+- [1. Setup](#1-setup)
+- [2. Backend](#2-backend)
+- [3. Ingestion](#3-ingestion)
+- [4. App](#4-app)
+- [5. Design and architecture](#5-design-and-architecture)
+- [6. Optional features](#6-optional-features)
+- [7. Evaluation and evidence](#7-evaluation-and-evidence)
+- [8. Known failures, limitations and pending validations](#8-known-failures-limitations-and-pending-validations)
+- [9. AI-assisted development (`.kiro/` and `.claude/`)](#9-ai-assisted-development-kiro-and-claude)
 
-## Status: what is verified and what is not
+## Deliverables checklist (assessment, section 8)
 
-This section lists only what has been executed. Everything else is marked
-**[EXPERIMENT]**: written, but not run in the authoring environment.
+| Deliverable | Where |
+|---|---|
+| Backend source (FastAPI, agent, tools, worker) | `backend/src/` (`series76_api`, `series76_agent`, `series76_domain`, `series76_data`) |
+| App source (Kotlin + Jetpack Compose) | `android/` |
+| Ingestion script / pipeline | `backend/ingest.py` → `backend/src/series76_data/` (OCR draft → human audit → manifest → publish) |
+| Processed data | `backend/data/audit/*.csv` (audited sheets), `backend/data/verified_replay/manifest.json`, `backend/data/golden/golden_dataset.json` (1012 audited cells) |
+| Dockerfile + docker-compose.yml (backend + database) | `backend/Dockerfile`, `backend/docker-compose.yml` |
+| `.env.example` without real keys | `backend/.env.example` |
+| README | this file (+ `android/README.md` for app internals, `backend/data/audit/AUDIT_GUIDE.md` for the audit) |
+| AI assistant configuration | `.kiro/` (Kiro specs, SDD) and `.claude/` (Claude Code) — see [section 9](#9-ai-assisted-development-kiro-and-claude) |
 
-- **Executed:** the backend unit and property suites (Hypothesis, at least 100 examples per
-  property), the integration suites against a real PostgreSQL 15 container (Testcontainers),
-  `ruff` and `mypy --strict`. Each executed level has an `Evidence_Record` in
-  `docs/evidence/evidence.jsonl`. Run `python -m series76_eval status` in `backend/` to see them.
-- **Catalog data: audited and verified.** Every row of `series_76_electric_data.pdf` was
-  audited by hand against the PDF images (reviewer: Juan Esteban Alvarez Garcia,
-  2026-11-09), starting from a local-OCR draft. No language model transcribed the PDF.
-  The audit confirmed the 7 tables / 68 rows / 4 N/A rows oracle. `build` wrote the
-  `verified_replay` manifest and the golden dataset (1012 cells). Level `01` publishes that
-  edition into a fresh PostgreSQL and finds every stored cell equal to its golden cell;
-  the result is in the evidence store.
-- **[EXPERIMENT] — Android.** The owner built the app with Gradle. The first runs exposed
-  three compile errors and two failing JVM properties (43 tests ran, 41 passed). All five
-  are fixed (`02995e1`), but the JVM suite has not been re-run since, and no emulator or
-  instrumented run has been executed. See `android/README.md`.
-- **Live model evaluation: executed (paired A/B).** `python -m series76_eval ab-live` ran the
-  36-scenario bilingual suite through the real API of the Compose stack, once per
-  configuration. One model function was varied at a time, with no fallback, and spend
-  comes from the stack's own ledger. Only two functions call a model: interpretation and
-  tool calling.
+Supporting material: the original sources and the design handoff are in
+`Series76_Kiro_Handoff_v1.0/`; architecture decision records in `backend/docs/adr/`; the
+API contract snapshot in `docs/contract/openapi.json`; the requirement traceability
+matrix in `docs/traceability/TRACEABILITY.md`; every test/evaluation result in
+`docs/evidence/`.
 
-  | Function | gpt-oss-120b | deepseek-v4-flash | gemini-2.5-flash-lite |
-  |---|---|---|---|
-  | Interpretation | **28/36** | 26/36 | 0/36 (request schema rejected, HTTP 400) |
-  | Tool calling | 28/36 | **29/36** | 24/36 |
+## Status at delivery
 
-  - Every configuration had zero numeric discrepancies against the golden dataset and
-    zero leaks.
-  - By the Spec 6 selection rule (most critical successes), the selection is
-    `gpt-oss-120b` for interpretation and `deepseek-v4-flash` for tool calling. The
-    tool-calling margin is a single scenario in a single run.
-  - The A/B also exposed defects shared by every model: undocumented attributes such as
-    price, follow-ups and ordinals, language switches, AC/DC supply semantics, and "not X"
-    on multi-valued fields. They were fixed deterministically.
-  - The selected configuration on the final code scores **35/36**, with zero numeric
-    discrepancies, USD 0.021 and a 4.1 s median (`docs/evidence/ab/20261109T221422Z/`). The
-    remaining miss, S09, asks which current (FLA or LRA) "corriente" means.
-  - Cumulative ledger: USD 0.89. USD 0.56 of it are pre-call estimates charged for
-    Gemini requests that were rejected, so the real spend is lower.
+Only what was actually executed is reported as passed; each such result has an
+Evidence_Record in `docs/evidence/evidence.jsonl` (`python -m series76_eval status`).
 
-- **Docker Compose cold start: executed.** The owner ran `docker compose up --build` from
-  a clean clone of `2d2b04e`. All six checks passed:
-  - `migrate` exited 0 and published the audited edition;
-  - `api`, `worker` and `db` came up;
-  - `/api/health` and `/api/ready` returned 200;
-  - the seed accounts were created.
+**Verified (executed):**
 
-  The result is recorded as evidence (level 12). It ran with the fake agent runtime, so
-  no model was called.
+- **Backend tests:** unit and property suites (Hypothesis, ≥ 100 examples per property)
+  and integration suites against a real PostgreSQL 15 (Testcontainers); `ruff` and
+  `mypy --strict` clean. Evaluation levels 01–06, 08, 09 re-run on the delivered code.
+- **Catalog data:** all 7 tables / 68 rows of the PDF audited by hand against the page
+  images (reviewer Juan Esteban Alvarez Garcia, 2026-11-09). The published edition equals
+  the golden dataset cell by cell (1012/1012), and the build is byte-for-byte reproducible.
+- **Docker Compose cold start** from a clean clone (owner-run, level 12): migrations,
+  provisioning, catalog publication, `api`/`worker`/`db` up, `/api/health` and
+  `/api/ready` 200.
+- **Live agent with real models (OpenRouter):** a canary turn and a paired A/B over three
+  models × two functions (36 bilingual scenarios per configuration). The selected
+  configuration scored **35/36** with **zero numeric discrepancies** against the golden
+  dataset ([section 5.6](#56-model-choice-measured-not-guessed)). Total model spend: USD 0.89
+  of the USD 10 key.
+- **Android (owner-run on an API 35 emulator):** Gradle build, the JVM unit/property suite
+  (`BUILD SUCCESSFUL`), the instrumented suite (3/3, including the end-to-end login against
+  the host backend), login, account isolation, the Developer Debug screen and multi-turn
+  context ("show me the second one") in the app.
 
-## Setup
+**Implemented and tested offline, but not validated live** — the OpenRouter key provided
+for the assessment **expired** (`401 API key expired`) during the final emulator session,
+and there was no time or budget left for another key:
 
-Prerequisites: Docker with Compose v2. For local development: Python 3.12 and
-[`uv`](https://docs.astral.sh/uv/). For the app: Android Studio with JDK 17.
+- the last agent fixes (metric follow-ups such as "and how much power does it draw?",
+  undocumented attributes such as price, follow-ups/ordinals, language switches, AC/DC
+  supply semantics, "parts without X"), the explained failure reply, the one-value-per-line
+  answer layout, and the "data returned" section of the Debug screen;
+- the manual emulator checklist with real answers (product cards, filters, abstentions,
+  recommendation questions, offline Send disabled after the connectivity fix);
+- the twelve end-to-end demo flows of the evaluation plan.
 
-### Quick start (Docker Compose)
+All of these have unit/integration tests (with the model faked) and are expected to work;
+what is missing is a run against a real model. Details in [section 8](#8-known-failures-limitations-and-pending-validations).
+
+## 1. Setup
+
+**Requirements**
+
+| For | You need |
+|---|---|
+| Backend (recommended path) | Docker with Compose v2 |
+| The real agent | An OpenRouter API key |
+| Backend development / tests (optional) | Python 3.12, [`uv`](https://docs.astral.sh/uv/), Docker (Testcontainers) |
+| App | Android Studio (Ladybug or newer) with JDK 17 and Android SDK API 35, or the command-line SDK; an emulator (API 26+) or a device |
+
+**Environment variables** — `backend/.env` (copy from `backend/.env.example`):
 
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env and replace every CHANGE_ME:
-#   POSTGRES_PASSWORD  - local database owner password
-#   DATABASE_URL       - set the series76_app password (any strong local value)
-#   ENCRYPTION_KEK     - python3 -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
-docker compose up --build
 ```
 
-Compose runs three services: `db` (PostgreSQL 15), `api` (FastAPI on
-`http://localhost:8000`) and `worker` (the asynchronous job worker). `api` and `worker` are
-built from one image. Before either starts, the one-shot `migrate` job does two things and
-then exits:
+| Variable | What to put |
+|---|---|
+| `POSTGRES_PASSWORD` | Any strong local password (database owner, used only by the `migrate` job). |
+| `DATABASE_URL` | Replace `CHANGE_ME_app_password` with any strong local password (least-privilege app login; created by `migrate`). |
+| `ENCRYPTION_KEK` | `python3 -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"` |
+| `OPENROUTER_API_KEY` | **Your OpenRouter key.** Without it the API still runs and every turn ends with an explained "could not answer" reply. |
+| `AGENT_MODEL`, `INTERPRETER_MODEL`, `FALLBACK_MODEL` | Pre-filled with the models selected by the A/B; change them freely ([section 5.6](#56-model-choice-measured-not-guessed)). |
+| `MODEL_CAPABILITIES`, `MODEL_PROVIDERS` | Pre-filled and verified; regenerate with `python -m series76_eval probe-models` if you change models. |
+| `DEMO_USER_*`, `DEMO_DEVELOPER_*` | The pre-loaded test users ([section 6](#6-optional-features)). Leave as they are for a local demo. |
+| `AGENT_RUNTIME` | `orchestrator` (real agent, default) or `fake` (deterministic, zero-spend, no key). |
 
-1. It runs `alembic upgrade head`.
-2. It provisions the least-privilege login role named in `DATABASE_URL`, granted
-   `app_writer` and `runtime_reader_role` (`python -m series76_api.provision`).
+Everything else (`TURN_*` per-turn limits, `PENDING_JOB_CAP`, token TTLs, …) has working
+defaults. `GEMINI_API_KEY` is not needed (see [section 3](#3-ingestion)).
 
-If the migration fails, nothing is served. Only that job sees the privileged database URL.
+## 2. Backend
 
-Check the services: `curl http://localhost:8000/api/health` and `…/api/ready`.
-
-The default `AGENT_RUNTIME=fake` is a deterministic, zero-spend agent, so the whole HTTP
-surface works without any key. To use the real agent, see
-[Configurable models](#configurable-models).
-
-### Local development (no Compose)
+### Build and run with Docker
 
 ```bash
 cd backend
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[dev]"
-.venv/bin/pytest                        # unit + property tests
-.venv/bin/pytest -m integration         # needs Docker (Testcontainers PostgreSQL)
+docker compose up --build        # add -d to run in the background
+```
+
+Compose starts:
+
+| Service | Role |
+|---|---|
+| `db` | PostgreSQL 15 (named volume `series76_pgdata`) |
+| `migrate` | One-shot job, runs before the others and exits: `alembic upgrade head` → provisions the least-privilege app login → **publishes the audited catalog** (`python -m series76_data publish`) → **pre-loads the test users** (`python -m series76_api.seed --demo`). Only this job sees the database owner URL. |
+| `api` | FastAPI on `http://localhost:8000` |
+| `worker` | Asynchronous turn worker (same image) |
+
+Check it is up:
+
+```bash
+curl http://localhost:8000/api/health      # {"status":"ok"}
+curl http://localhost:8000/api/ready       # database / key material / provider readiness
+docker compose logs migrate                # "edition 8d87d10b-… published", "demo accounts ready"
+```
+
+Stop with `docker compose down` (add `-v` to delete the database and the cost ledger).
+
+### Access the API
+
+Interactive OpenAPI docs: **http://localhost:8000/docs** (contract snapshot:
+`docs/contract/openapi.json`). Every endpoint except health, register and login needs
+`Authorization: Bearer <access_token>`.
+
+```bash
+# 1. Log in with a pre-loaded test user
+TOKEN=$(curl -s -X POST localhost:8000/api/auth/login -H 'content-type: application/json' \
+  -d '{"email":"user@example.com","password":"demo-user-example-2026A!"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+# 2. Ask (no session_id = new conversation)
+curl -s -X POST localhost:8000/api/conversation -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"query":"What is the torque of 763C00-11300000/A?"}'
+
+# 3. Follow up in the same conversation without repeating the part number
+curl -s -X POST localhost:8000/api/conversation -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"session_id":"<session_id from step 2>","query":"and how much power does it draw?"}'
+```
+
+**Synchronous endpoint — `POST /api/conversation`** (the assessment's fixed contract).
+Request `{ "session_id"?: string, "query": string, "client_request_id"?: string }`;
+without `session_id` a new conversation starts and its id is returned;
+`client_request_id` makes retries idempotent. The response is a **Response_Envelope**:
+
+- `session_id`, `answer` (the fixed fields), plus `status` (`COMPLETED` /
+  `NEEDS_CLARIFICATION` / `AWAITING_CONFIRMATION`), `message_id`, `turn_id`,
+  `catalog_edition_id`, `interpretation_summary`, `plan`, `warnings`;
+- typed `content_blocks` the app renders: `product_card`, `comparison_table`,
+  `matching_part_numbers`, `bar_chart`, `clarification`, `plan_review`, `text`. Each figure
+  carries value, unit, data status (`AVAILABLE`, `NOT_APPLICABLE`, `NOT_DOCUMENTED`, …),
+  service, frequency, supply and the evidence (cell references) it was read from.
+
+When a plan needs confirmation (e.g. an under-specified recommendation), confirm it with
+`POST /api/sessions/{session_id}/plans/{revision}/confirm`.
+
+**Asynchronous endpoint — `POST /api/conversation/jobs`** (what the app uses; same body):
+returns `202 {"job_id","session_id","status":"QUEUED"}`. Poll `GET /api/jobs/{job_id}`
+honoring `Retry-After`; once the job is `COMPLETED`, `NEEDS_CLARIFICATION`,
+`AWAITING_CONFIRMATION` or `FAILED` the poll returns the envelope (for `FAILED`, a
+user-safe explanation with a reference). `POST /api/jobs/{job_id}/cancel` is idempotent.
+A per-user cap (`PENDING_JOB_CAP`) bounds pending jobs.
+
+**Conversations and auth**
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/sessions` | Your conversations: id, title, date, pending jobs |
+| `GET /api/sessions/{id}/messages` | History, in order, to resume a conversation |
+| `PATCH /api/sessions/{id}` / `DELETE /api/sessions/{id}` | Rename / delete (crypto-shredding of its key) |
+| `GET /api/sessions/{id}/messages/{message_id}/trace` | Developer Debug trace (developer role **and** owner only) |
+| `POST /api/auth/register` | Registration (always role `user`) |
+| `POST /api/auth/login` / `refresh` / `logout`, `GET /api/auth/me` | Opaque bearer tokens, rotating refresh, revocation, current role |
+
+Conversations survive a backend restart: history, plans and agent state are stored in
+PostgreSQL, encrypted with AES-256-GCM.
+
+### Local development (without Compose)
+
+```bash
+cd backend
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/ruff check src tests && .venv/bin/mypy src
+.venv/bin/pytest                    # unit + property tests
+.venv/bin/pytest -m integration     # needs Docker (Testcontainers PostgreSQL)
 ```
 
-### Android emulator to host networking
+## 3. Ingestion
 
-The emulator reaches the host at `10.0.2.2`. The app's default backend URL is
-`http://10.0.2.2:8000/` (`android/gradle.properties`, `series76.apiBaseUrl`). Cleartext HTTP
-is allowed **only** for that host. Build and run steps are in `android/README.md`.
+`series_76_electric_data.pdf` has **no text layer**: its seven tables are images. So the
+catalog is not extracted by a model; it is drafted by local OCR and **audited by a person,
+cell by cell**, before anything is published. The pipeline is deterministic and makes no
+model call.
 
-## Registration and login
-
-```bash
-curl -X POST localhost:8000/api/auth/register -H 'content-type: application/json' \
-     -d '{"email":"ana@example.com","password":"<12+ chars, 3 of: lower/upper/digit/symbol>"}'
-curl -X POST localhost:8000/api/auth/login -H 'content-type: application/json' \
-     -d '{"email":"ana@example.com","password":"…"}'
-# -> {"access_token": "…", "refresh_token": "…", …}
-```
-
-- Send `Authorization: Bearer <access_token>` on every call.
-- `POST /api/auth/refresh` rotates the pair. Reusing an already-rotated refresh token
-  revokes the whole token family.
-- `POST /api/auth/logout` revokes the current session.
-- `GET /api/auth/me` returns your id, email and role.
-- Tokens are opaque and stored only as SHA-256 verifiers. Passwords are hashed.
-
-## Test `user` vs `developer`
-
-- **Registration always creates a `user`.** Any client-supplied `role` or privilege field is
-  ignored, and no HTTP endpoint can create or promote a `developer`.
-- **A `developer` is created out-of-band, with the seed CLI.** The password comes from the
-  environment, never from the repository:
+### How to run it
 
 ```bash
 cd backend
-SEED_PASSWORD='<choose one>' docker compose run --rm -e SEED_PASSWORD api \
-  python -m series76_api.seed --email dev@example.com --role developer
-SEED_PASSWORD='<choose one>' docker compose run --rm -e SEED_PASSWORD api \
-  python -m series76_api.seed --email user@example.com --role user
+python3 ingest.py                 # verify the shipped processed data (no DB, no network)
+python3 ingest.py publish         # load it into PostgreSQL (Compose's migrate job does this)
 ```
 
-No demo credentials are committed. Pick them when you seed.
+The full pipeline, for re-doing the audit from the PDF:
 
-## Debug permissions
+| Step | Command | What it does |
+|---|---|---|
+| 1. Draft | `python3 ingest.py draft` | Local OCR (RapidOCR, no language model) reads each page twice (1× and 2×) and writes one sheet per table to `data/audit/T01–T07.csv` plus `notes.csv`. Cells where the reads disagree, or that look like OCR confusions, are marked `?`. Needs the `etl-draft` extra and poppler. |
+| 2. Audit | edit the CSVs, then `python3 ingest.py check` | A person compares every cell with the PDF (`data/audit/AUDIT_GUIDE.md`). `check` reports rows not marked `OK`, unresolved `?`, leading zeros, a column mixing decimals and whole numbers, values that no OCR read produced without a justification. |
+| 3. Build | `python3 ingest.py build --reviewer "Name" --audited-at YYYY-MM-DD` | Audited sheets → `data/verified_replay/manifest.json` (SHA-256 of the PDF and every artifact, reviewer, counts, corrections, manifest digest) and `data/golden/golden_dataset.json`. Refuses an incomplete audit or counts that differ from the 7 tables / 68 rows / 4 N/A oracle. |
+| 4. Publish | `python3 ingest.py publish` | Verifies every artifact hash, re-derives the edition from the verified bytes, checks it against the golden dataset, and publishes it atomically as the active catalog edition. Idempotent. |
 
-`GET /api/sessions/{session_id}/messages/{message_id}/trace` returns the sanitized trace of
-one assistant turn. The trace contains turn states, tool calls with their typed arguments and
-statuses, model-call counts and figure counts. It never contains prompts, keys, tokens or
-model output.
+`python3 ingest.py all --reviewer "Name"` runs steps 2–4. The database URL comes from
+`--database-url`, `SERIES76_MIGRATE_URL` or `DATABASE_URL`.
 
-Access is granted only when **both** of these hold:
+### Where the processed data ends up
 
-- the caller has the `developer` role;
-- the caller **owns** the conversation.
+| Artifact | Path |
+|---|---|
+| Audited sheets (the human-verified source) | `backend/data/audit/T01.csv` … `T07.csv`, `notes.csv` |
+| Untouched OCR draft (corrections are computed against it) | `backend/data/audit/ocr_draft.json` |
+| Replay manifest (hashes, reviewer, corrections, digest) | `backend/data/verified_replay/manifest.json` |
+| Golden dataset (1012 printed cells, with their SHA-256) | `backend/data/golden/golden_dataset.json` |
+| Published catalog (what the tools query) | PostgreSQL schemas `catalog`, `provenance`, `publication` (typed tables: part numbers, configurations, supply profiles, service performance, frequency-bound measurements, notes, cell-level evidence) |
 
-Every other caller, including a developer reading another developer's trace, gets the same
-denial as for a resource that does not exist. Traces are stored encrypted. In the Android
-app, the Debug screen is shown only to developers, and the backend re-checks the role on
-every call.
+All of these are committed, so a fresh clone needs only `publish`. Rebuilding with the
+same reviewer and date reproduces the manifest and golden dataset byte for byte.
+`python -m series76_eval documental-verify` compares the published database with the
+golden dataset cell by cell.
 
-## Synchronous endpoint — `POST /api/conversation`
+**Ingestion modes.** `verified_replay` (the delivered and default mode) replays the
+audited, hashed artifacts and needs no key. `fresh_extraction` (re-extraction with
+Google AI Studio / Gemini) was designed but **not delivered** — it remains a stub.
+
+## 4. App
+
+### Build and run
+
+**Android Studio:** *File → Open…* the `android/` folder (it uses the checked-in Gradle
+wrapper 8.10.2), create an emulator (any API 26+ image; tested on API 35), start the
+backend (section 2), then *Run ▸ app*.
+
+**Command line** (from `android/`, with the Android SDK installed):
 
 ```bash
-curl -X POST localhost:8000/api/conversation -H "authorization: Bearer $TOKEN" \
-     -H 'content-type: application/json' \
-     -d '{"query":"What is the torque of 76-…?", "session_id": null, "client_request_id": "uuid"}'
+echo "sdk.dir=$ANDROID_HOME" > local.properties     # e.g. sdk.dir=/opt/android-sdk
+emulator -avd <your_avd> &                          # wait for the Android home screen
+./gradlew :app:installDebug                         # build + install on the running emulator/device
+adb shell monkey -p com.series76.assistant 1        # open the app (or tap its icon)
+./gradlew :app:testDebugUnitTest                    # JVM unit + property tests
+./gradlew :app:connectedDebugAndroidTest            # instrumented tests (emulator running)
 ```
 
-The request needs `query`. `session_id` is optional: omit it to start a new conversation.
-`client_request_id` is optional and makes retries idempotent.
+### Point it to the backend
 
-The endpoint returns a **Response_Envelope**:
+The backend URL is compiled in from `android/gradle.properties`:
+`series76.apiBaseUrl=http://10.0.2.2:8000/`. `10.0.2.2` is the emulator's alias for the
+host's `localhost`, so with the backend on `localhost:8000` nothing needs changing.
+For a physical device or another host, override it without editing the repo, e.g. in
+`~/.gradle/gradle.properties`: `series76.apiBaseUrl=https://your-host/` (cleartext HTTP is
+allowed **only** for `10.0.2.2`; any other host must use HTTPS — see
+`res/xml/network_security_config.xml`).
 
-- `answer`, `status` (`COMPLETED` / `NEEDS_CLARIFICATION` / `AWAITING_CONFIRMATION`),
-  `session_id`, `message_id`, `turn_id` and `catalog_edition_id`;
-- `interpretation_summary`, `plan` and `warnings`;
-- typed `content_blocks` of exactly these kinds: `text`, `product_card`, `comparison_table`,
-  `matching_part_numbers`, `bar_chart`, `clarification`, `plan_review`.
+### Screens
 
-Figures inside blocks are typed: value, unit, data status and cell-level evidence. When a
-plan needs confirmation, send
-`POST /api/sessions/{id}/plans/{revision}/confirm`.
+1. **Login / registration** (optional feature): sign in with a test user.
+2. **Conversations:** saved conversations (search by title, rename, delete); open one to
+   resume it with its context, or start a new one.
+3. **Chat:** multi-turn chat that keeps the `session_id`; product data is rendered as
+   product cards, comparison tables, result lists and bar charts (never as a paragraph,
+   never with tool names or internal details). Loading, queued/working, error, offline
+   and empty states are explicit; offline, Send is disabled and the draft is kept.
+4. **Developer Debug:** for each answer, the tools called, their parameters and the data
+   they returned, plus turn states and model-call counts.
 
-## Asynchronous endpoint — `POST /api/conversation/jobs`
+### Open the Debug screen
 
-This endpoint takes the same body and returns `202 {"job_id", "session_id", "status": "QUEUED"}`:
+1. Sign in as the **developer** test user (`dev@example.com`, section 6).
+2. Open a conversation and send a message; wait for the answer.
+3. Under the assistant message, tap **Debug trace**.
 
-- Poll `GET /api/jobs/{job_id}`, honoring `Retry-After`. When the job is `COMPLETED`, the
-  poll returns the same Response_Envelope as the synchronous path.
-- `POST /api/jobs/{job_id}/cancel` cancels a job and is idempotent.
-- Each user can have only a bounded number of pending jobs (`PENDING_JOB_CAP`).
+The entry is shown only when `GET /api/auth/me` reports the `developer` role, and the
+backend re-checks role **and** conversation ownership on every trace request (anyone else
+gets the same response as for a missing resource). End users never see it.
 
-The worker leases jobs with fencing tokens:
+App architecture and its tests: `android/README.md`.
 
-- A retried or duplicated job produces exactly one persisted effect.
-- Deleting a conversation while one of its jobs runs never brings it back.
+## 5. Design and architecture
 
-## Conversations
+### 5.1 Overview
 
-- `GET /api/sessions` lists your conversations, with `pending_jobs` for each.
-- `GET /api/sessions/{id}/messages` returns the history in order.
-- `PATCH /api/sessions/{id}` renames a conversation.
-- `DELETE /api/sessions/{id}` deletes it; its encryption key is destroyed.
-
-Titles, messages, traces, plan state and checkpoints are encrypted with AES-256-GCM: each
-conversation has its own data key, wrapped by `ENCRYPTION_KEK`, which lives outside the
-database.
-
-## Configurable models
-
-No model id is hardcoded. To enable the real agent, set these in `.env`:
-
-```dotenv
-AGENT_RUNTIME=orchestrator
-OPENROUTER_API_KEY=<your key>
-AGENT_MODEL=<tool-calling model id>
-AGENT_MODEL_CANDIDATES=<model a>,<model b>        # >= 2 per function for the A/B evaluation
-INTERPRETER_MODEL=<model id>   INTERPRETER_MODEL_CANDIDATES=<a>,<b>
-FALLBACK_MODEL=<model id>      # used only if it preserves the required capabilities
-MODEL_CAPABILITIES={"<model id>": ["tools", "structured_outputs"]}   # see probe-models
-MODEL_PROVIDERS={"<model id>": ["<provider>", ...]}                   # optional pinning
-OPENROUTER_DATA_COLLECTION=deny
-AGENT_TOOL_SET=B               # A = coarse tools, B = fine-grained (see ADR 0002)
+```
+Android app (Compose, MVVM/UDF, Room cache, Keystore)
+        │  HTTPS/JSON, Bearer token
+        ▼
+FastAPI api ──► PostgreSQL ◄── worker (turn jobs, leases + fencing)
+                  ▲   ▲
+                  │   └── conversation / identity / execution schemas (AES-256-GCM)
+                  └────── catalog / provenance / publication schemas (published edition)
+        agent (LangGraph StateGraph) = interpreter LLM → policy → tool-calling LLM
+        → deterministic typed tools (SQL) → claim verifier → deterministic composer
 ```
 
-- **Only two functions call a model:** interpretation (structured output) and tool
-  calling. The answer text is composed deterministically from tool results, so no model
-  ever writes a number. `ANSWER_MODEL` is accepted for compatibility but no code path calls
-  it, and the A/B evaluation does not compare it.
-- **Models without verified capabilities are refused.** A model whose capabilities are not
-  listed in `MODEL_CAPABILITIES` is rejected rather than guessed (fail closed).
-- **No configuration means a clear error, not an answer.** Without a key or a model, the API
-  starts and answers turns with a retryable `503`. It never invents an answer.
-- **The agent is an explicit LangGraph `StateGraph` tool loop** (ADR 0004). A semantic
-  interpreter produces a typed interpretation. All numbers come from deterministic tools over
-  the published edition, and a claim verifier withholds any figure it cannot bind to evidence.
+A modular monolith: one codebase, two processes (`api`, `worker`), feature-first packages
+with light hexagonal ports where they add value (storage, LLM, crypto, queue, clock).
 
-## Budget
-
-Model capabilities are verified, never assumed. `python -m series76_eval probe-models`
-reads OpenRouter's public endpoint list for every configured model (no key, no spend) and
-prints the `MODEL_CAPABILITIES` line. A capability counts only if **every** endpoint the
-model can be routed to supports it. `MODEL_PROVIDERS` can pin a model to exact providers
-(`provider.only`), and then only those endpoints count. For example, `openai/gpt-oss-120b`
-has providers without tool support, so it is pinned to providers that support both tools
-and structured output.
-
-There is one **cumulative** cost ledger across every model and function, with three limits:
-
-- **USD 10.00** hard cap;
-- **USD 6.00** for development and evaluation;
-- **USD 4.00** reserved for the final demo.
-
-These limits are fixed in code (`series76_agent/domain/ledger.py`). Configuration can only
-lower spending, never raise the limits. Each call is authorized against a conservative
-estimate before it is made, and its real cost is recorded afterwards. Each turn also has its
-own model-call, tool-call, token, cost and wall-time rails (the `TURN_*` variables).
-
-In Compose, `api` and `worker` share one ledger file on a named volume. Every authorization
-re-reads that file under a file lock. As an outer backstop, set a **credit limit on the
-OpenRouter key itself**.
-
-Evaluation follows this order: offline → canary → paired A/B (`python -m series76_eval`).
-No model or tool set is declared the winner without a persisted `Evidence_Record`.
-
-## Ingestion modes: `verified_replay` vs `fresh_extraction`
-
-- **`verified_replay` (the default)** rebuilds the catalog from approved, versioned
-  manifests whose SHA-256 is checked before anything is ingested. It needs **no Gemini
-  key**.
-- **`fresh_extraction` (optional)** re-derives candidates from the PDF. It runs only with
-  the evaluator's own `GEMINI_API_KEY`, and its output must pass the same manual audit
-  before it is published.
-
-The PDF tables are **images** (there is no text layer), so the initial edition comes from
-a manual audit. The ETL is `python -m series76_data`, run in `backend/`:
-
-| Command | What it does |
+| Package | Responsibility |
 |---|---|
-| `draft` | Local OCR (RapidOCR, no language model) reads each page twice, at 1x and 2x. It writes one audit sheet per table to `data/audit/`. Where the two reads disagree, or a value looks like a classic OCR confusion, the cell is marked `?`. It refuses to overwrite sheets that are being audited. Needs the `etl-draft` extra and poppler's `pdfimages`. |
-| `check` | Audit progress: rows marked `OK`, unresolved `?` cells, malformed values (leading zeros, a column mixing decimal and whole numbers), plus every check `build` applies. |
-| `build --reviewer NAME` | Turns the audited sheets into `data/verified_replay/manifest.json` (SHA-256 of the PDF and of every artifact, versions, reviewer, counts, corrections, `manifest_digest`) and `data/golden/golden_dataset.json`. It refuses an incomplete audit, a row with a value no OCR read produced but no justification (choosing one of the OCR reads is recorded as a confirmation), and counts that differ from the 7/68/4 oracle. |
-| `publish` | `verified_replay`: verifies every artifact hash, re-derives the edition from the verified bytes, checks the manifest digest and the golden round trip, then publishes atomically through the Spec 1 gate. It is idempotent. Compose runs it in the one-shot `migrate` job. Until a manifest exists it is a no-op. |
+| `series76_data` | ETL (OCR draft → audit → manifest → publish), catalog schema, provenance |
+| `series76_domain` | Deterministic search/compare/rank/convert semantics and the typed LangChain tools |
+| `series76_agent` | Interpreter, policy, LangGraph tool loop, claim verifier, response composer, model gateway |
+| `series76_api` | FastAPI routes, auth, jobs, worker, encryption, persistence |
+| `series76_eval` | Evaluation levels, live A/B harness, evidence store, traceability |
 
-`python -m series76_eval documental-verify` then compares the published edition with the
-golden dataset, cell by cell, at the exact printed string. See
-`backend/data/audit/AUDIT_GUIDE.md` for what the reviewer checks.
+### 5.2 Tabular data: typed SQL, no RAG
 
-The `fresh_extraction` extractor is a stub and is not delivered (owner decision, time).
+The tables are small, exact and numeric, so they are stored as a **typed relational
+model** (part numbers, configurations, supply profiles with AC/DC modes, per-service
+performance, per-frequency measurements, notes) with **cell-level evidence** for every
+value, and queried through parameterized operations. RAG/pgvector would add fuzziness
+exactly where the assessment demands exactness, so it is not used. Merged cells, N/A,
+"not documented" and missing values are distinct states — N/A is never shown as zero.
 
-`python -m series76_eval integrity` checks the source PDF against the trusted digest in
-`Series76_Kiro_Handoff_v1.0/SHA256SUMS.txt`. A mismatch rejects the PDF before ingestion.
+### 5.3 The agent: the LLM orchestrates, it never sources numbers
 
-## Key decisions and tradeoffs
+1. **Interpreter (LLM, structured output):** intent, part numbers, filters, criteria.
+   Deterministic guards drop anything not in the user's message (no invented part
+   numbers or thresholds), normalize categorical values and settle follow-ups.
+2. **Policy (deterministic):** validates the plan, asks for clarification or
+   confirmation (e.g. a recommendation without the four requirement groups is
+   preliminary, a top-1 needs a priority), or abstains (out of scope, undocumented
+   attributes, injection).
+3. **Tool loop (LLM with native tool calling, LangGraph `StateGraph`):** selects the
+   custom LangChain tools (`get_part_details`, `search_parts`, `get_source_notes`) over the
+   published edition. The tools run fixed, parameterized reads; the model cannot write SQL.
+4. **Claim verifier + composer (deterministic):** every figure in the answer must bind to
+   tool evidence or it is withheld; the answer prose and the content blocks are composed
+   from the same verified figures. That is why only two functions call a model and the
+   "answer writer" is deliberately code, not an LLM.
 
-- **No invented numbers.** Figures come only from typed, parameterized tools over a
-  published edition. The model gets typed placeholders and cannot write digits into the
-  answer prose. Figures that cannot be verified are withheld, with their state shown
-  (for example `N/A`, not documented, unavailable).
-- **Two-layer data model.** An audited source edition is published by SHA-256 manifest.
-  The runtime reads only the published edition, through `runtime_reader_role`.
-- **Database roles and API split.** Three least-privilege database roles, plus
-  `app_writer` for conversation data. The HTTP layer never runs SQL written by a model.
-- **AES-256-GCM everywhere**, with per-conversation data keys, AAD bound to purpose, owner
-  and record, and crypto-shredding on delete (ADR 0003 records the EAX fallback, which was
-  not needed).
-- **Sync and async turns share one durable job model**, with fencing tokens and a
-  no-resurrection guard.
-- **Explicit `StateGraph` instead of a prebuilt agent** (ADR 0004): every state of the
-  12-state turn machine is visible and testable.
-- **Android is a pure consumer.** It renders typed blocks, keeps a per-account encrypted
-  cache backed by the Keystore, and never sends anything offline.
-- **Messages carry an insertion sequence.** `conversation.messages.seq` (migration 0009)
-  keeps a worker turn's question before its answer, because both are written in one
-  transaction.
+Trade-off: a deterministic composer is less fluent than an LLM-written answer, but it
+makes "the LLM must not invent or recall numbers" a structural property instead of a
+prompt instruction.
 
-## Security limitations
+### 5.4 Conversations, jobs and security
 
-- **Single-node assumptions.** The KEK comes from an environment variable. Production should
-  use a KMS or secret manager, and key rotation is not automated.
-- **No email verification and no password reset flow.** Rate limiting on login exists, but
-  there is no global API rate limiting or WAF.
-- **The local stack runs over HTTP.** Put TLS in front of `api` for any non-local
-  deployment.
-- **Each process enforces the cost ledger.** Two calls in flight in different processes can
-  overshoot the cap by at most their pre-call estimates, which is why a provider-side key
-  limit is recommended.
-- **Traces are minimal by design, which limits debugging.** They hold no prompts or model
-  text.
-- **The Android Debug screen is reachable by navigation.** It shows no content without the
-  backend's role check.
+- **Multi-turn context** is resolved against persisted, typed conversation state
+  (focus part, last result list, plan revisions) — never re-derived from prose. "And how
+  much power does it draw?" applies to the part in focus; ambiguous references are asked
+  back, never guessed.
+- **Durable jobs:** sync and async turns share one job model in PostgreSQL: one active turn
+  per conversation, idempotent requests, leases with fencing tokens, and a tombstone so a
+  deleted conversation is never resurrected by a late result.
+- **Encryption:** titles, messages, traces, plans and agent checkpoints are encrypted with
+  AES-256-GCM per conversation (data key wrapped by `ENCRYPTION_KEK`, outside the
+  database), with authenticated context bound to purpose, owner and record.
+- **Auth:** opaque bearer tokens stored as SHA-256 verifiers, rotating refresh with reuse
+  detection, Argon2id password hashes, `user`/`developer` roles, ownership on every
+  resource. Three least-privilege database roles; the runtime reads the catalog read-only.
 
-## Known failures and gaps
+### 5.5 Android
 
-- **The audit was corrected after review.** The OCR draft is a candidate only. When the
-  audit was cross-checked against the PDF images, three problems were found and fixed
-  before `build`, and each fix is justified in the audit sheets:
-  - an operating speed typed as `033` instead of `33`;
-  - the `*` note ("Sizes 6 and 7 are not CSA Certified") had been set to apply to all rows,
-    and now applies only to the starred part numbers;
-  - several notes still had the OCR's glued words; they were re-transcribed letter for
-    letter.
+Single Gradle module, feature-first MVVM with unidirectional data flow, Retrofit/OkHttp,
+type-safe Navigation Compose, a Room read cache encrypted per account with a
+Keystore-backed key, explicit offline UX (banner, Send disabled, draft kept, nothing
+auto-sent), and polling of async jobs that stops when the screen is not visible.
 
-  `check` and `build` now reject leading zeros and flag a column that mixes decimal and
-  whole numbers (a point read as a comma).
-- **Traceability:** `F3-AT10` (Android cross-token) and `F3-AT11` (catalog failure) were
-  listed only in the Spec 3 summary table. By owner decision they are now traced by Spec 5
-  Requirement 9 and Spec 4 Requirement 10, whose behaviour already covered them; the matrix
-  has no gaps (a test enforces it).
-- **`fresh_extraction` (Gemini) is not delivered.** It stays a stub that only checks for
-  `GEMINI_API_KEY`; by owner decision (time) the delivered and default path is
-  `verified_replay`, which makes no model call. Spec 6 Requirement 6.11 (one documented fresh
-  extraction run) is therefore unmet.
-- **Android** [EXPERIMENT]: built; JVM suite fixes not yet re-run; emulator and
-  instrumented tests not run (see above).
-- **`google/gemini-2.5-flash-lite` cannot serve interpretation.** The router rejects the
-  recursive structured-output schema (HTTP 400), although its endpoints advertise
-  structured outputs. `probe-models` checks the advertised capability, not schema
-  compatibility.
-- **The ledger over-counts rejected requests.** A failed provider call is charged at the
-  pre-call estimate (USD 0.01) because some failures are billed. Requests rejected before
-  generation are therefore over-counted (USD 0.56 in the A/B).
-- **"Corriente" without a qualifier** may be asked back (FLA or LRA): scenario S09 in the
-  final run.
-- **The A/B ran once per configuration.** Margins of one scenario, such as tool calling
-  29 vs 28, are within run-to-run variation.
-- **The twelve end-to-end demo flows are pending evidence.** `python -m series76_eval
-  status` shows them.
+### 5.6 Model choice (measured, not guessed)
 
-## Evaluation harness
+All models are configurable (`AGENT_MODEL`, `INTERPRETER_MODEL`, `FALLBACK_MODEL`,
+`*_CANDIDATES`). Candidates were picked from OpenRouter's `/models` list (price, tool and
+structured-output support), their capabilities were verified per endpoint
+(`probe-models`), and they were compared with a **paired A/B**: the 36-scenario bilingual
+suite through the real API, one function varied at a time, scored deterministically
+against the golden dataset (numeric fidelity, expected figures, golden-derived result
+sets, observable behavior).
 
-Run these from `backend/`:
+| Configuration (whole-turn latency) | Successes | Median | p90 | Numeric discrepancies |
+|---|---|---|---|---|
+| gpt-oss-120b for both functions (baseline) | 28/36 | 4.1 s | 9.1 s | 0 |
+| Interpretation: deepseek-v4-flash | 26/36 | 9.6 s | 30.4 s | 0 |
+| Interpretation: gemini-2.5-flash-lite | 0/36 (schema rejected, HTTP 400) | — | — | 0 |
+| Tool calling: deepseek-v4-flash | **29/36** | 5.1 s | 14.2 s | 0 |
+| Tool calling: gemini-2.5-flash-lite | 24/36 | 4.1 s | 7.1 s | 0 |
+| **Selected** (gpt-oss-120b + deepseek-v4-flash), final code | **35/36** | 4.1 s | 9.1 s | 0 |
 
-| Command | What it does |
+- **Interpretation → `openai/gpt-oss-120b`:** most accurate and twice as fast as DeepSeek.
+  Pinned to providers that support both tools and structured output (`MODEL_PROVIDERS`).
+- **Tool calling → `deepseek/deepseek-v4-flash`:** one scenario ahead (within run-to-run
+  noise), at no latency cost in the final configuration.
+- **Fallback → `openai/gpt-4.1-mini`**, used only if it preserves capabilities and privacy.
+- The A/B also exposed defects every model shared (follow-ups, price questions, AC/DC
+  semantics, "parts without X"); they were fixed deterministically, which is why the final
+  configuration scores 35/36. Raw replies and summaries: `docs/evidence/ab/`.
+
+### 5.7 Budget
+
+One cumulative cost ledger across every model call, with limits fixed in code: USD 10
+hard cap, at most USD 6 for development/evaluation, USD 4 reserved for the demo. Each call
+is authorized against an estimate before it is made and its real cost is recorded after;
+each turn has its own call/token/cost/time rails (`TURN_*`). A failed call is charged at
+its estimate so the ledger never under-counts. Spent during development: **USD 0.89**.
+
+### 5.8 Main trade-offs
+
+| Decision | Instead of | Why |
+|---|---|---|
+| Human-audited OCR draft | LLM/vision extraction | The PDF is images; only a per-cell audit makes the numbers trustworthy. |
+| Typed SQL tools | RAG / pgvector | Exact numeric lookups and filters; no retrieval fuzziness. |
+| Deterministic answer composer | LLM-written answers | Numbers cannot be invented by construction; less fluent prose. |
+| Explicit LangGraph `StateGraph` | Prebuilt ReAct agent | Every turn state is visible, testable and traceable (ADR 0004). |
+| Durable job queue in PostgreSQL | In-request processing only | Survives restarts, cancellation and deletion races; the app polls. |
+| Modular monolith | Microservices | One codebase and deploy unit; enough for the scope. |
+| Per-conversation AES-256-GCM | Plain storage / disk encryption only | Conversations and traces are unreadable in a database dump. |
+
+Further detail: `backend/docs/adr/` (primary-key types, tool-set A/B, checkpoint
+encryption fallback, explicit StateGraph).
+
+## 6. Optional features
+
+### Login — test users
+
+Implemented: email + password login returning an opaque bearer token, rotating refresh,
+logout, hashed passwords (Argon2id), and per-user conversations (each user sees and uses
+only their own). A registration screen is included too (it always creates role `user`).
+
+The Compose `migrate` job **pre-loads two test users** (from `DEMO_*` in `.env`):
+
+| Email | Password | Role |
+|---|---|---|
+| `user@example.com` | `demo-user-example-2026A!` | `user` — conversations only |
+| `dev@example.com` | `demo-dev-example-2026A!` | `developer` — also the Debug screen |
+
+These are local demo credentials; change them in `.env` (or leave the passwords empty to
+disable them) for anything that is not a local demo. A `developer` can only be created
+out-of-band (`python -m series76_api.seed --email … --role developer`, password from
+`SEED_PASSWORD`); no HTTP endpoint creates or promotes one.
+
+### Voice messages
+
+**Not implemented** (deliberately postponed in the design to protect the required scope).
+
+### Other additions beyond the assessment
+
+Asynchronous job API with cancellation, plan confirmation with revisions, conversation
+rename/delete/search, application-level encryption, explicit offline mode in the app,
+bilingual (EN/ES) answers and UI.
+
+## 7. Evaluation and evidence
+
+| Command (from `backend/`) | What it does |
 |---|---|
-| `python -m series76_eval levels` | Lists the twelve test levels. |
-| `python -m series76_eval run-level <level>` | Runs a level and persists its `Evidence_Record`. |
-| `python -m series76_eval traceability` | Regenerates `docs/traceability/TRACEABILITY.md`. |
-| `python -m series76_eval repro-check` | Checks the delivery structure statically. |
-| `python -m series76_eval config-check` | Scans `.kiro/` for secrets. |
-| `python -m series76_eval contract-snapshot` | Checks the API contract for drift. |
-| `python -m series76_eval integrity` | Checks the source PDF's SHA-256. |
-| `python -m series76_eval live-eval` | Refuses to run without a key and audited data. |
+| `python -m series76_eval status` | Evidence summary and pending items |
+| `python -m series76_eval levels` / `run-level <level>` | The twelve test levels; running one persists its Evidence_Record |
+| `python -m series76_eval documental-verify` | Published database vs golden dataset, cell by cell |
+| `python -m series76_eval probe-models` | Verifies configured models' capabilities on OpenRouter's public endpoint list (no key) |
+| `AB_EMAIL=… AB_PASSWORD=… python -m series76_eval ab-live <compose dir> [project] [--current]` | Paired A/B (or the current configuration) through a running stack; spend read from the stack's ledger |
+| `python -m series76_eval ab-report <run dir>` | Re-scores a saved A/B run and persists its evidence (no model call) |
+| `python -m series76_eval traceability` / `repro-check` / `config-check` / `contract-snapshot` / `integrity` | Traceability matrix, delivery structure, secret scan, API contract drift, source PDF SHA-256 |
 
-A result counts as "passed" only if it has a persisted `Evidence_Record`. Coverage is always
-reported as a fraction with an explicit denominator.
+A result counts as passed only with a persisted Evidence_Record; coverage is always a
+fraction with an explicit denominator.
 
-## AI-assisted development and the `.kiro/` configuration
+## 8. Known failures, limitations and pending validations
 
-`.kiro/` is the **AI-assistant configuration artifact** used for this project's development
-setup. `.kiro/specs/` holds the six Kiro specs: requirements, design and task list for each
-component. They were the binding contract for the implementation.
+**Not validated live (implemented, offline-tested; the OpenRouter key expired):**
 
-The code was written with AI assistance (Kiro specs; Claude Code for Specs 4–6 and the final
-integration). These working rules applied:
+- The agent fixes after the last live run (`35da602`): metric follow-ups ("and how much
+  power does it draw?"), the "how much" false positive in the price rule, the explained
+  failure reply, the one-value-per-line layout, and the Debug "returned data".
+- The emulator checklist with real answers, and the twelve end-to-end demo flows; the
+  USD 4 demo reserve was never used.
+- The A/B ran once per configuration; one-scenario margins are within run-to-run noise.
+  The one miss of the final run (S09) asks back whether "corriente" means FLA or LRA.
 
-- Each slice was verified with ruff, mypy, unit tests and real-PostgreSQL integration
-  tests before its commit.
-- No invariant was weakened to make a test pass.
-- Defects that property tests found were fixed in the code, not in the tests. Examples:
-  withheld figures that still showed a status, history ordering, the debug trace shape, and
-  cache purge on logout.
-- Anything that could not be executed is labeled [EXPERIMENT] instead of being reported as
-  done.
+**Android:** the latest Android changes (offline detection fix, "count" unit, Debug
+"returned data" + its JVM test) were made after the owner's last Gradle run and have not
+been compiled since. Accessibility checks (TalkBack, 200 % text), the seven offline
+scenarios F5-OFF-01..07 and the Android QA groups were not executed. In product cards,
+data-status labels follow the device language while data labels follow the question's
+language.
 
-`.kiro/` contains no secrets. `python -m series76_eval config-check` verifies that, and every
-credential in `.env.example` is a placeholder.
+**Not delivered:** `fresh_extraction` (Gemini re-extraction) — Spec 6 Requirement 6.11 is
+unmet; voice messages (optional).
+
+**Known limitations:**
+
+- `google/gemini-2.5-flash-lite` cannot serve interpretation: the router rejects the
+  recursive structured-output schema although the endpoints advertise structured outputs
+  (`probe-models` checks advertised capabilities, not schema compatibility).
+- The ledger over-counts requests rejected before generation (charged at the estimate):
+  USD 0.56 of the USD 0.89.
+- Security: single-node setup; the KEK comes from an environment variable (use a KMS in
+  production) and is not rotated automatically; no email verification or password reset;
+  login rate limiting but no global rate limiting; the local stack is HTTP (put TLS in front
+  for anything non-local); each process enforces the ledger, so two in-flight calls in
+  different processes can overshoot by their estimates — also set a credit limit on the key.
+- The pre-loaded demo passwords are documented on purpose (assessment requirement); they
+  are for local demos only.
+
+**Audit notes:** the human audit was cross-checked against the PDF images before the
+build; three problems were found and fixed with justifications (an operating speed typed
+`033`, the CSA `*` note scoped to all rows instead of the starred part numbers, notes with
+OCR-glued words). `check`/`build` now reject such inputs.
+
+## 9. AI-assisted development (`.kiro/` and `.claude/`)
+
+The assessment expects most code to be written with AI; this is how it was done.
+
+1. **Prompt engineering — Gemini 3 (high reasoning).** Throughout the project, Gemini 3
+   acted as a prompt engineer: each prompt for the other assistants was first given to
+   Gemini, which returned an improved prompt (re-prompting).
+2. **Architecture and requirements — GPT Luna (high reasoning).** A long design session,
+   before any code, in which GPT acted as software-architecture consultant, requirements
+   analyst and technical advisor. It did not write code or Kiro specs; it challenged
+   proposals, compared alternatives with their pros and cons, and asked for approval on the
+   important decisions. Starting from the Konecto assessment, the Series 76 documents and
+   the initial notes, the session defined scope, user stories and quality attributes, the
+   PostgreSQL data model, the ETL for the PDF, the LangChain agent architecture, the
+   FastAPI REST contracts, security and authentication, the Jetpack Compose app and the test
+   strategy, plus architectural styles (feature-first, light hexagonal), patterns
+   (Repository, DTO, Unit of Work, State Machine) and tactics for security,
+   maintainability, reliability and performance. The work was organized in seven phases,
+   from discovery (F0) to consolidation (F6), with versioned documents, justifications,
+   acceptance criteria and pending verifications. The result is the **Series 76 Kiro
+   Handoff v1.0** (`Series76_Kiro_Handoff_v1.0/`): seven canonical architecture/alignment
+   documents, the original PDFs, a decision record, an audit report and a start prompt for
+   Kiro — a complete, justified design, not an implemented application.
+3. **Specs (SDD) and first implementation — Kiro.** With the handoff ready, Kiro generated
+   the six specs in `.kiro/specs/` (requirements, design and tasks for data & ingestion,
+   domain & tools, backend API/auth/jobs/crypto, agent orchestration, Android app,
+   evaluation & reproducibility), which are the binding contract of a spec-driven
+   development. Kiro then implemented specs 1–3 (data & ingestion, domain & tools, backend
+   API/auth/jobs/crypto), until its credits ran out (the quota was already largely used by
+   other projects).
+4. **Remaining implementation — Claude Code (Claude Opus).** Claude Code finished the
+   implementation from that point to this delivery: the agent (spec 4), the Android app
+   (spec 5), the evaluation harness (spec 6), the ETL tooling and the manual-audit
+   workflow, the live A/B evaluation, and the fixes found while testing on Docker and the
+   emulator.
+
+**Configuration directories:**
+
+- `.kiro/` — the Kiro specs (`.kiro/specs/*/requirements.md`, `design.md`, `tasks.md`) and
+  their configuration.
+- `.claude/` — Claude Code's project setup: `CLAUDE.md` (the working rules it followed:
+  sources of truth, "no invented numbers", budget, evidence-only claims, never weakening an
+  invariant, per-slice verification) and `settings.json`.
+
+Throughout, every slice was verified with `ruff`, `mypy --strict`, unit and real-PostgreSQL
+integration tests before its commit; nothing not executed was reported as done; neither
+`.kiro/` nor `.claude/` contains secrets (`python -m series76_eval config-check`).

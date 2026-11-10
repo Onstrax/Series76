@@ -89,6 +89,7 @@ def make_part(
     notes: tuple[str, ...] = (),
     na: bool = True,
     evidence_id: int | None = None,
+    motor_power: str | int | None = None,
 ) -> FakePartData:
     """Build a part with service rows, frequency-bound measurements, a supply."""
 
@@ -108,7 +109,7 @@ def make_part(
         edition_id=edition_id,
         enclosure=enclosure,
         supply_profile=profile,
-        motor_power=_metric(None, Unit.WATT, na=False),
+        motor_power=_metric(motor_power, Unit.WATT, na=False),
         availability=DataStatus.AVAILABLE,
         evidence=ev(),
     )

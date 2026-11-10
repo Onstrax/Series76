@@ -6,11 +6,14 @@ Compose, Retrofit/OkHttp, a Room read cache, DataStore for non-sensitive
 settings, and Android-Keystore-backed storage. It is a pure consumer of the
 backend (Spec 3) and renderer of the typed `content_blocks` (Spec 4).
 
-> **Status (honest):** the source tree, unit/property tests, a Robolectric
-> Compose test, and an instrumented suite are written. **No Gradle build,
-> unit-test run, emulator run, or accessibility audit has been executed** in the
-> environment where this code was authored (no Android SDK there). Building and
-> running are `[EXPERIMENT]` steps for Android Studio / Spec 6.
+> **Status (honest):** the owner built the app with Gradle on an API 35 emulator. The
+> JVM unit/property suite passed (`BUILD SUCCESSFUL`) and the instrumented suite ran 3/3,
+> including the end-to-end login against the host backend. Login, account isolation, the
+> Debug screen and multi-turn context were checked by hand in the app. The last Android
+> changes (offline-detection fix, "count" unit, Debug "returned data" and its JVM test)
+> came after that run and have not been compiled since; the manual checks with real
+> answers could not be repeated because the OpenRouter key expired. Accessibility and the
+> F5-OFF offline scenarios were not executed.
 
 ## Build and run (Android Studio)
 
@@ -41,17 +44,19 @@ HTTPS.
 
 ## Demo accounts
 
-The backend seeds a `user` and a `developer` account with the developer seed
-CLI (see the root README). Their credentials come from your local `.env`; **no
-real credential is stored in this repository**. Registration in the app always
-creates role `user` — the app has no role selector and never sends a role.
+The Compose `migrate` job pre-loads two test users from `DEMO_*` in `backend/.env`:
+`user@example.com` / `demo-user-example-2026A!` (role `user`) and `dev@example.com` /
+`demo-dev-example-2026A!` (role `developer`, sees the Debug screen). They are local demo
+credentials. Registration in the app always creates role `user` — the app has no role
+selector and never sends a role.
 
 ## Reaching the Developer Debug screen
 
 1. Sign in with the `developer` account.
 2. Open a conversation (*Conversations → a row*), send a message, wait for the
    answer.
-3. Under an assistant message, tap **Debug trace**. The entry appears only when
+3. Under an assistant message, tap **Debug trace**: turn states, model calls, and per
+   tool its parameters and the data it returned. The entry appears only when
    `GET /api/auth/me` reports role `developer`; the backend re-checks role and
    ownership on every trace request and denies anything else identically.
 

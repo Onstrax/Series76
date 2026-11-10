@@ -23,6 +23,7 @@ COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 # Approved verified_replay artifacts: audit sheets, manifest, golden dataset.
 COPY data ./data
+COPY ingest.py ./ingest.py
 
 RUN pip install --upgrade pip \
     && pip install .
